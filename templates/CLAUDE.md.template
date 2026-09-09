@@ -1,0 +1,29 @@
+# CLAUDE.md
+
+Instruções de projeto para o Claude Code. Este arquivo foi bootstrapado a partir do [Vibe Coding Huboox](https://github.com/LuizFStival/VibeCodingHuboox) — ajuste o checklist abaixo para refletir o que foi de fato instalado neste projeto (ver `SETUP.md` do Huboox).
+
+## Skills/plugins instalados
+
+- [ ] Graphify — mapa de conhecimento do projeto (`/graphify .`)
+- [ ] frontend-design — UI/CSS/componentes visuais
+- [ ] copywriting — landing pages, e-mails, anúncios, texto de conversão
+- [ ] Humanizer — revisar texto gerado por IA antes de publicar
+- [ ] semgrep/skills (code-security, llm-security, semgrep) — segurança
+- [ ] Impeccable — polish visual final de UI (`/impeccable audit`, `/impeccable critique`)
+- [ ] Superpowers — disciplina de explorar → planejar → codar
+
+## Quando usar cada especialista
+
+| Situação | Especialista |
+|---|---|
+| Construindo ou ajustando um componente/tela | frontend-design |
+| Polindo uma tela já funcional antes de dar como pronta | Impeccable |
+| Escrevendo copy de venda/marketing/e-mail | copywriting |
+| Revisando texto gerado por IA voltado a leitor humano | Humanizer |
+| Código que lida com input externo, auth, infra, ou LLM | semgrep/skills |
+| Entendendo um código-base desconhecido ou grande | Graphify |
+| Qualquer tarefa ambígua ou de escopo aberto | Superpowers — explorar e planejar antes de codar |
+
+## Convenções do projeto
+
+<!-- Preencher: stack, comandos de build/test/lint, estrutura de pastas, padrões específicos deste projeto. -->
