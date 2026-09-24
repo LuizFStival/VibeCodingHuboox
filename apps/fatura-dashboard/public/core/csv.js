@@ -1,14 +1,13 @@
-// Parser da fatura CSV do Nubank (e formatos compatíveis).
-// Formato atual:   date,title,amount       -> 2026-09-23,Posto X,"146,37"
-// Formato antigo:  date,category,title,amount
-// Pagamentos e estornos vêm com valor negativo e NÃO contam como gasto.
+// Peças comuns a todos os bancos: leitura de CSV, datas, id estável e a
+// montagem do lançamento normalizado. Cada banco (core/banks/*) só precisa
+// dizer onde estão data, descrição e valor no arquivo dele.
 
-import { createHash } from 'node:crypto';
 import { parseAmountToCents } from './money.js';
 import { parseInstallment, merchantKey, stripAccents } from './merchant.js';
+import { hashId } from './hash.js';
 
-/** Parser CSV mínimo com suporte a aspas, aspas escapadas e CRLF. */
-export function parseCsv(text) {
+/** Parser CSV mínimo com suporte a aspas, aspas escapadas, CRLF e separador configurável. */
+export function parseCsv(text, delimiter = ',') {
   const rows = [];
   let row = [];
   let field = '';
@@ -25,7 +24,7 @@ export function parseCsv(text) {
       continue;
     }
     if (c === '"') inQuotes = true;
-    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === delimiter) { row.push(field); field = ''; }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && src[i + 1] === '\n') i++;
       row.push(field); field = '';
@@ -38,17 +37,14 @@ export function parseCsv(text) {
   return rows;
 }
 
-const HEADER_ALIASES = {
-  date: ['date', 'data'],
-  title: ['title', 'descricao', 'description', 'estabelecimento', 'lancamento'],
-  amount: ['amount', 'valor', 'value'],
-};
+export const normalizeHeader = (h) => stripAccents(h).trim().toLowerCase();
 
-function resolveColumns(header) {
-  const norm = header.map((h) => stripAccents(h).trim().toLowerCase());
+/** Acha o índice de cada coluna pelo nome (aceita apelidos). */
+export function resolveColumns(header, aliases) {
+  const norm = header.map(normalizeHeader);
   const cols = {};
-  for (const [key, aliases] of Object.entries(HEADER_ALIASES)) {
-    cols[key] = norm.findIndex((h) => aliases.includes(h));
+  for (const [key, names] of Object.entries(aliases)) {
+    cols[key] = norm.findIndex((h) => names.includes(h));
     if (cols[key] === -1) {
       throw new Error(`Coluna "${key}" não encontrada no cabeçalho (${header.join(', ')})`);
     }
@@ -56,7 +52,7 @@ function resolveColumns(header) {
   return cols;
 }
 
-function normalizeDate(raw) {
+export function normalizeDate(raw) {
   const s = String(raw).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -64,42 +60,32 @@ function normalizeDate(raw) {
   throw new Error(`Data inválida: "${raw}"`);
 }
 
-/** Nubank_2026-10-02.csv -> "2026-10" (mês de vencimento = mês de referência da fatura). */
-export function monthFromFilename(filename) {
-  const m = String(filename || '').match(/(\d{4})-(\d{2})(?:-\d{2})?/);
-  return m ? `${m[1]}-${m[2]}` : null;
-}
-
 /**
- * Converte o CSV em lançamentos normalizados.
- * O id é determinístico (mês + conteúdo + ocorrência) para que reimportar a
- * mesma fatura preserve correções manuais feitas em lançamentos específicos.
+ * Converte linhas {date, title, amount} (texto cru) em lançamentos normalizados.
+ * O id é determinístico (banco + mês + conteúdo + ocorrência) para que reimportar
+ * a mesma fatura preserve correções manuais feitas em lançamentos específicos.
  */
-export function parseStatement(text, month) {
+export function buildTransactions(rawRows, { bank, month }) {
   if (!/^\d{4}-\d{2}$/.test(String(month))) throw new Error('Mês de referência inválido (use AAAA-MM)');
-  const rows = parseCsv(text);
-  if (rows.length < 2) throw new Error('Arquivo vazio ou sem lançamentos');
-
-  const cols = resolveColumns(rows[0]);
   const seen = new Map();
   const errors = [];
   const transactions = [];
 
-  rows.slice(1).forEach((r, idx) => {
-    const line = idx + 2;
+  for (const { line, date: rawDate, title: rawTitle, amount } of rawRows) {
     try {
-      const date = normalizeDate(r[cols.date]);
-      const title = String(r[cols.title] ?? '').trim();
+      const date = normalizeDate(rawDate);
+      const title = String(rawTitle ?? '').trim();
       if (!title) throw new Error('Descrição vazia');
-      const amountCents = parseAmountToCents(r[cols.amount]);
+      const amountCents = parseAmountToCents(amount);
       const { baseTitle, installment } = parseInstallment(title);
 
-      const fingerprint = `${month}|${date}|${title}|${amountCents}`;
+      const fingerprint = `${bank}|${month}|${date}|${title}|${amountCents}`;
       const occurrence = (seen.get(fingerprint) ?? 0) + 1;
       seen.set(fingerprint, occurrence);
 
       transactions.push({
-        id: createHash('sha1').update(`${fingerprint}|${occurrence}`).digest('hex').slice(0, 16),
+        id: hashId(`${fingerprint}|${occurrence}`),
+        bank,
         month,
         date,
         title,
@@ -113,7 +99,7 @@ export function parseStatement(text, month) {
     } catch (e) {
       errors.push(`Linha ${line}: ${e.message}`);
     }
-  });
+  }
 
   if (transactions.length === 0) {
     throw new Error(`Nenhum lançamento válido. ${errors.slice(0, 3).join('; ')}`);

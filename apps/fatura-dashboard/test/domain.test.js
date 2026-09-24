@@ -1,11 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseAmountToCents } from '../src/domain/money.js';
-import { parseInstallment, merchantKey } from '../src/domain/merchant.js';
-import { parseCsv, parseStatement, monthFromFilename } from '../src/domain/parser.js';
-import { autoCategory, resolveCategory } from '../src/domain/categorizer.js';
-import { installments, addMonths, buildDashboard } from '../src/domain/analytics.js';
+import { parseAmountToCents } from '../public/core/money.js';
+import { parseInstallment, merchantKey } from '../public/core/merchant.js';
+import { parseCsv } from '../public/core/csv.js';
+import { nubank } from '../public/core/banks/nubank.js';
+import { BANKS, detectBank } from '../public/core/banks/index.js';
+import { hashId } from '../public/core/hash.js';
+import { autoCategory, resolveCategory } from '../public/core/categorizer.js';
+import { installments, addMonths, buildDashboard } from '../public/core/analytics.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 
@@ -32,24 +35,36 @@ test('parser de CSV respeita aspas e vírgulas internas', () => {
 });
 
 test('mês de referência vem do nome do arquivo', () => {
-  assert.equal(monthFromFilename('Nubank_2026-10-02.csv'), '2026-10');
-  assert.equal(monthFromFilename('fatura.csv'), null);
+  assert.equal(nubank.monthFromFilename('Nubank_2026-10-02.csv'), '2026-10');
+  assert.equal(nubank.monthFromFilename('fatura.csv'), null);
 });
 
 test('importa a fatura: créditos separados e ids estáveis para duplicatas', () => {
-  const { transactions, errors } = parseStatement(fixture('Nubank_2026-10-02.csv'), '2026-10');
+  const { transactions, errors } = nubank.parse(fixture('Nubank_2026-10-02.csv'), '2026-10');
   assert.equal(errors.length, 0);
   assert.equal(transactions.length, 10);
   assert.equal(transactions.filter((t) => t.kind === 'credit').length, 1);
   const ubers = transactions.filter((t) => t.merchantKey.startsWith('uber'));
   assert.equal(ubers.length, 2);
   assert.notEqual(ubers[0].id, ubers[1].id);
-  const again = parseStatement(fixture('Nubank_2026-10-02.csv'), '2026-10').transactions;
+  const again = nubank.parse(fixture('Nubank_2026-10-02.csv'), '2026-10').transactions;
   assert.deepEqual(again.map((t) => t.id), transactions.map((t) => t.id));
 });
 
+test('registro de bancos: Nubank ativo, Banco do Brasil em breve', () => {
+  assert.deepEqual(BANKS.map((b) => [b.id, b.status]), [['nubank', 'active'], ['bb', 'soon']]);
+  assert.equal(detectBank(fixture('Nubank_2026-10-02.csv'), 'fatura.csv').id, 'nubank');
+  assert.throws(() => BANKS[1].parse('x', '2026-10'), /ainda não está disponível/);
+});
+
+test('hash de id é estável e com 16 hex', () => {
+  assert.equal(hashId('abc'), hashId('abc'));
+  assert.notEqual(hashId('abc'), hashId('abd'));
+  assert.match(hashId('abc'), /^[0-9a-f]{16}$/);
+});
+
 test('linhas inválidas viram aviso, não quebram a importação', () => {
-  const { transactions, errors } = parseStatement('date,title,amount\n2026-01-01,Ok,"1,00"\nlixo,X,Y\n', '2026-01');
+  const { transactions, errors } = nubank.parse('date,title,amount\n2026-01-01,Ok,"1,00"\nlixo,X,Y\n', '2026-01');
   assert.equal(transactions.length, 1);
   assert.equal(errors.length, 1);
 });

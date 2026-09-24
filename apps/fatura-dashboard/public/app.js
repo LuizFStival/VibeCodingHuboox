@@ -1,5 +1,21 @@
 // Front-end sem build: ES modules + SVG/CSS puros. Todo texto vindo dos dados
 // entra via textContent (helper h), nunca innerHTML — descrição de fatura é dado externo.
+// Não há servidor: a lógica (core/) roda aqui e os dados ficam no localStorage.
+
+import { createService } from './core/service.js';
+import { createStore, memoryStorage } from './core/store.js';
+import { BANKS, getBank, detectBank } from './core/banks/index.js';
+
+let persistent = true;
+let storage;
+try {
+  storage = window.localStorage;
+  storage.getItem('probe');
+} catch {
+  storage = memoryStorage();
+  persistent = false;
+}
+const svc = createService(createStore(storage));
 
 // ---------- utilidades ----------
 const $ = (sel) => document.querySelector(sel);
@@ -22,7 +38,7 @@ const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 function h(tag, attrs = {}, ...children) {
   const el = document.createElementNS(
-    ['svg', 'rect', 'line', 'text', 'g'].includes(tag) ? 'http://www.w3.org/2000/svg' : 'http://www.w3.org/1999/xhtml', tag);
+    ['svg', 'rect', 'line', 'text', 'g', 'path'].includes(tag) ? 'http://www.w3.org/2000/svg' : 'http://www.w3.org/1999/xhtml', tag);
   for (const [k, v] of Object.entries(attrs ?? {})) {
     if (v === null || v === undefined || v === false) continue;
     if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
@@ -36,12 +52,22 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Erro ${res.status}`);
-  return body;
+/** Marca simplificada do banco (SVG). Bancos "em breve" aparecem em cinza via CSS. */
+function bankLogo(id, size = 28) {
+  const svg = h('svg', { viewBox: '0 0 32 32', width: size, height: size, class: 'bank-logo', 'aria-hidden': 'true' });
+  if (id === 'nubank') {
+    svg.append(h('rect', { width: 32, height: 32, rx: 8, fill: '#820ad1' }),
+      h('text', { x: 16, y: 21.5, 'text-anchor': 'middle', fill: '#fff', 'font-size': 15, 'font-weight': 700, 'font-family': 'system-ui, sans-serif' }, 'nu'));
+  } else if (id === 'bb') {
+    svg.append(h('rect', { width: 32, height: 32, rx: 8, fill: '#fcd116' }),
+      h('text', { x: 16, y: 21.5, 'text-anchor': 'middle', fill: '#0038a8', 'font-size': 13, 'font-weight': 800, 'font-family': 'system-ui, sans-serif' }, 'BB'));
+  } else {
+    svg.append(h('rect', { width: 32, height: 32, rx: 8, fill: '#76756f' }));
+  }
+  return svg;
 }
+
+const bankName = (id) => { try { return getBank(id).name; } catch { return id; } };
 
 let toastTimer;
 function toast(msg, isError = false) {
@@ -248,9 +274,7 @@ async function onCategoryChange(t, sel) {
   }
   const scope = state.applyToMerchant ? 'merchant' : 'single';
   try {
-    await api(`/api/transactions/${t.id}`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ category, scope }),
-    });
+    svc.updateCategory(t.id, { category, scope });
     toast(scope === 'merchant'
       ? `“${t.baseTitle}” → ${category}. Regra salva para todas as faturas, inclusive as próximas.`
       : `Só este lançamento foi para ${category}.`);
@@ -264,9 +288,8 @@ async function onCategoryChange(t, sel) {
 async function refreshAfterEdit() {
   state.allTx = null;
   state.history = null;
-  const [cats, dash] = await Promise.all([api('/api/categories'), api(`/api/months/${state.month}`)]);
-  state.categories = cats;
-  state.dash = dash;
+  state.categories = svc.categories();
+  state.dash = svc.dashboard(state.month);
   render();
 }
 
@@ -294,7 +317,7 @@ function filteredTransactions(list) {
 async function renderTransactions() {
   const f = state.filters;
   const all = f.scope === 'all';
-  if (all && !state.allTx) state.allTx = await api('/api/transactions');
+  if (all && !state.allTx) state.allTx = svc.transactions();
   const source = all ? state.allTx : state.dash.transactions;
   const rows = filteredTransactions(source);
   const expenses = rows.filter((t) => t.kind === 'expense');
@@ -411,7 +434,7 @@ function renderInstallments() {
 }
 
 async function renderHistory() {
-  if (!state.history) state.history = await api('/api/history');
+  if (!state.history) state.history = svc.history();
   const hist = state.history;
   const panel = $('#tab-history');
   if (hist.months.length < 1) { panel.replaceChildren(); return; }
@@ -444,18 +467,19 @@ async function renderHistory() {
             months.length > 1 ? h('td', { class: 'cell' }, brl(hist.averageCents)) : null),
         )))),
     card('Faturas importadas', null, h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {}, h('th', {}, 'Fatura'), h('th', {}, 'Arquivo'), h('th', { class: 'right' }, 'Total'), h('th', {}))),
-      h('tbody', {}, state.months.map((m) => h('tr', {},
-        h('td', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); selectMonth(m.month, 'overview'); } }, monthLong(m.month))),
-        h('td', { class: 'small muted' }, m.filename ?? '—'),
-        h('td', { class: 'right num' }, brl(m.totalCents)),
-        h('td', { class: 'right' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => deleteMonth(m.month) }, 'Excluir')),
+      h('thead', {}, h('tr', {}, h('th', {}, 'Fatura'), h('th', {}, 'Banco'), h('th', {}, 'Arquivo'), h('th', { class: 'right' }, 'Total'), h('th', {}))),
+      h('tbody', {}, svc.listStatements().map((s) => h('tr', {},
+        h('td', {}, h('a', { href: '#', onclick: (e) => { e.preventDefault(); selectMonth(s.month, 'overview'); } }, monthLong(s.month))),
+        h('td', {}, h('span', { class: 'bank-inline' }, bankLogo(s.bank, 20), bankName(s.bank))),
+        h('td', { class: 'small muted' }, s.filename ?? '—'),
+        h('td', { class: 'right num' }, brl(s.totalCents)),
+        h('td', { class: 'right' }, h('button', { class: 'btn ghost small', type: 'button', onclick: () => deleteStatement(s.bank, s.month) }, 'Excluir')),
       )))))),
   );
 }
 
 async function renderRules() {
-  const rules = await api('/api/rules');
+  const rules = svc.rules();
   const input = h('input', { type: 'text', placeholder: 'Ex.: Presentes', maxlength: 40 });
   $('#tab-rules').replaceChildren(
     card('Regras aprendidas', h('span', { class: 'muted small' }, 'criadas quando você corrige uma categoria'),
@@ -468,7 +492,7 @@ async function renderRules() {
           h('td', { class: 'right' }, h('button', {
             class: 'btn ghost small', type: 'button',
             onclick: async () => {
-              await api(`/api/rules/${encodeURIComponent(r.merchantKey)}`, { method: 'DELETE' });
+              svc.deleteRule(r.merchantKey);
               toast('Regra removida — volta a valer a categorização automática.');
               await refreshAfterEdit();
             },
@@ -479,11 +503,12 @@ async function renderRules() {
       h('form', { class: 'filters', onsubmit: async (e) => {
         e.preventDefault();
         try {
-          state.categories = await api('/api/categories', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: input.value }) });
+          state.categories = svc.addCategory(input.value);
           toast('Categoria criada.');
           renderRules();
         } catch (err) { toast(err.message, true); }
       } }, h('label', {}, 'Nova categoria', input), h('button', { class: 'btn', type: 'submit' }, 'Adicionar'))),
+    dataCard(),
   );
 }
 
@@ -512,18 +537,18 @@ async function render() {
 function renderMonthSelect() {
   const sel = $('#monthSelect');
   sel.replaceChildren(...state.months.map((m) => h('option', { value: m.month, selected: m.month === state.month }, `${monthLong(m.month)} · ${brl(m.totalCents)}`)));
-  sel.disabled = state.months.length === 0;
+  sel.closest('.month-picker').hidden = state.months.length === 0;
 }
 
 async function selectMonth(month, tab) {
   state.month = month;
-  state.dash = await api(`/api/months/${month}`);
+  state.dash = svc.dashboard(month);
   renderMonthSelect();
   if (tab) setTab(tab); else render();
 }
 
 async function loadMonths(preferred) {
-  state.months = await api('/api/months');
+  state.months = svc.listMonths();
   state.history = null;
   state.allTx = null;
   const target = state.months.find((m) => m.month === preferred)?.month ?? state.months[0]?.month ?? null;
@@ -531,23 +556,73 @@ async function loadMonths(preferred) {
   else { state.month = null; state.dash = null; renderMonthSelect(); render(); }
 }
 
-async function deleteMonth(month) {
-  if (!confirm(`Excluir a fatura de ${monthLong(month)}? As regras de categoria continuam salvas.`)) return;
-  await api(`/api/months/${month}`, { method: 'DELETE' });
+async function deleteStatement(bank, month) {
+  if (!confirm(`Excluir a fatura ${bankName(bank)} de ${monthLong(month)}? As regras de categoria continuam salvas.`)) return;
+  svc.deleteStatement(bank, month);
   toast('Fatura excluída.');
-  await loadMonths(state.month === month ? null : state.month);
+  await loadMonths(state.month);
+}
+
+// ---------- backup ----------
+function download(filename, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = h('a', { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function dataCard() {
+  const fileIn = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange: async () => {
+    const f = fileIn.files[0];
+    fileIn.value = '';
+    if (!f) return;
+    if (!confirm('Restaurar este backup? Os dados atuais deste navegador serão substituídos.')) return;
+    try {
+      svc.importBackup(JSON.parse(await f.text()));
+      state.categories = svc.categories();
+      toast('Backup restaurado.');
+      await loadMonths();
+    } catch (e) { toast(`Backup inválido: ${e.message}`, true); }
+  } });
+  return card('Seus dados', null,
+    h('p', { class: 'muted small', style: { marginTop: 0 } },
+      'Tudo fica salvo só neste navegador — nada é enviado para servidor. Para levar para outro dispositivo ou guardar uma cópia, exporte o backup e restaure do outro lado.'),
+    persistent ? null : h('p', { class: 'notice' }, 'Este navegador está bloqueando o armazenamento local: os dados somem ao fechar a aba. Exporte o backup antes de sair.'),
+    h('div', { class: 'filters' },
+      h('button', { class: 'btn', type: 'button', onclick: () => {
+        download(`fatura-dashboard-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(svc.exportBackup(), null, 1));
+      } }, 'Exportar backup (.json)'),
+      h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Restaurar backup'),
+      fileIn));
 }
 
 // ---------- upload ----------
-const monthFromName = (name) => { const m = name.match(/(\d{4})-(\d{2})(?:-\d{2})?/); return m ? `${m[1]}-${m[2]}` : ''; };
+/** Cartões de banco: ativos selecionáveis, "em breve" em cinza e desabilitados. */
+function bankCards({ name, selected, onChange }) {
+  return h('div', { class: 'bank-picker', role: 'radiogroup', 'aria-label': 'Banco' }, BANKS.map((b) => {
+    const soon = b.status !== 'active';
+    return h('label', { class: `bank-card${soon ? ' soon' : ''}`, title: b.help },
+      name ? h('input', { type: 'radio', name, value: b.id, checked: b.id === selected, disabled: soon, onchange: () => onChange(b.id) }) : null,
+      bankLogo(b.id, 32),
+      h('span', { class: 'bank-text' }, h('b', {}, b.name), h('span', { class: 'small muted' }, soon ? 'Em breve' : 'Disponível')));
+  }));
+}
 
-function openUpload(files) {
+async function openUpload(files) {
+  const texts = await Promise.all(files.map((f) => f.text()));
+  let bank = detectBank(texts[0], files[0].name).id;
   const list = $('#uploadList');
   const inputs = files.map((f) => {
-    const inp = h('input', { type: 'month', value: monthFromName(f.name), required: true, 'aria-label': `Mês de ${f.name}` });
+    const inp = h('input', { type: 'month', required: true, 'aria-label': `Mês de ${f.name}` });
     list.append(h('div', { class: 'upload-item' }, h('span', { title: f.name }, f.name), inp));
     return inp;
   });
+  const fillMonths = () => files.forEach((f, i) => { inputs[i].value = getBank(bank).monthFromFilename(f.name) ?? ''; });
+  fillMonths();
+  $('#bankPicker').replaceChildren(bankCards({ name: 'bank', selected: bank, onChange: (id) => { bank = id; fillMonths(); } }));
+
   const dlg = $('#uploadDialog');
   dlg.onclose = async () => {
     list.replaceChildren();
@@ -557,11 +632,9 @@ function openUpload(files) {
       const month = inputs[i].value;
       try {
         if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('mês não informado');
-        const r = await api(`/api/import?month=${month}&filename=${encodeURIComponent(f.name)}`, {
-          method: 'POST', headers: { 'content-type': 'text/csv' }, body: await f.text(),
-        });
+        const r = svc.importCsv({ text: texts[i], filename: f.name, month, bank });
         last = r.month;
-        toast(`${monthLong(r.month)}: ${r.count} lançamentos ${r.replaced ? 'atualizados' : 'importados'}${r.warnings.length ? ` (${r.warnings.length} linha(s) ignoradas)` : ''}.`);
+        toast(`${bankName(r.bank)} · ${monthLong(r.month)}: ${r.count} lançamentos ${r.replaced ? 'atualizados' : 'importados'}${r.warnings.length ? ` (${r.warnings.length} linha(s) ignoradas)` : ''}.`);
       } catch (e) {
         toast(`${f.name}: ${e.message}`, true);
       }
@@ -594,6 +667,6 @@ function bind() {
 }
 
 bind();
-Promise.all([api('/api/categories'), loadMonths()])
-  .then(([cats]) => { state.categories = cats; render(); })
-  .catch((e) => toast(e.message, true));
+$('#emptyBanks').replaceChildren(bankCards({}));
+state.categories = svc.categories();
+loadMonths().catch((e) => toast(e.message, true));

@@ -37,4 +37,4 @@ Resumo do fluxo:
 
 ## Apps
 
-- [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (CSV do Nubank), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico mês a mês. Para rodar: `cd apps/fatura-dashboard && npm start`.
+- [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (Nubank ativo, Banco do Brasil em breve), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico. Site estático (dados no navegador), pronto para a Vercel. Local: `cd apps/fatura-dashboard && npm start`.

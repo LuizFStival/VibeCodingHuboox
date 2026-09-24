@@ -31,7 +31,7 @@
     <button role="tab" data-tab="transactions">Lançamentos</button>
     <button role="tab" data-tab="installments">Parcelas</button>
     <button role="tab" data-tab="history">Mês a mês</button>
-    <button role="tab" data-tab="rules">Regras</button>
+    <button role="tab" data-tab="rules">Regras & dados</button>
   </nav>
 
   <main id="app">
@@ -39,7 +39,9 @@
       <h2>Suba sua primeira fatura</h2>
       <p class="muted">No app do Nubank: Cartão de crédito → Faturas → escolha a fatura → <em>Exportar fatura</em> (CSV).
         Você pode subir várias de uma vez — o mês é lido do nome do arquivo (ex.: <code>Nubank_2026-10-02.csv</code>).</p>
+      <div id="emptyBanks"></div>
       <button class="btn primary" type="button" data-action="upload">Escolher arquivos</button>
+      <p class="muted small">🔒 Seus dados ficam só neste navegador — nada é enviado para servidor.</p>
     </section>
 
     <section id="tab-overview" class="tab-panel"></section>
@@ -52,7 +54,11 @@
   <dialog id="uploadDialog">
     <form method="dialog" class="dialog-body">
       <h2>Importar faturas</h2>
-      <p class="muted small">Confira o mês de referência (mês do vencimento). Reenviar um mês já importado substitui os lançamentos, mas mantém suas correções de categoria.</p>
+      <div>
+        <h3 style="margin-bottom:8px">Banco</h3>
+        <div id="bankPicker"></div>
+      </div>
+      <p class="muted small">Confira o mês de referência (mês do vencimento). Reenviar a fatura de um mês já importado substitui os lançamentos, mas mantém suas correções de categoria.</p>
       <div id="uploadList" class="upload-list"></div>
       <div class="dialog-actions">
         <button value="cancel" class="btn" type="submit">Cancelar</button>
