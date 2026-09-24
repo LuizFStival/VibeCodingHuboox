@@ -34,3 +34,7 @@ Resumo do fluxo:
 - Todos os 7 recursos já têm um mecanismo oficial de distribuição (marketplace de plugin do Claude Code, `npx skills add`, ou instalador de CLI). Copiar os arquivos duplicaria conteúdo que os próprios autores mantêm atualizado.
 - Licenças variam (Apache-2.0, MIT, e a Semgrep Rules License, mais restritiva) — instalar direto da fonte evita qualquer ambiguidade de redistribuição.
 - Atualizações upstream (novas regras de segurança, novos padrões de design) chegam automaticamente da próxima vez que o plugin/skill for atualizado, sem esse repo precisar sincronizar nada.
+
+## Apps
+
+- [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (Nubank ativo, Banco do Brasil em breve), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico. Site estático (dados no navegador), pronto para a Vercel. Local: `cd apps/fatura-dashboard && npm start`.
