@@ -1,0 +1,15 @@
+{
+  "name": "fatura-dashboard",
+  "version": "1.0.0",
+  "description": "Dashboard mensal da fatura do cartão (Nubank CSV): categorias, parcelas, histórico e regras aprendidas.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
+  }
+}

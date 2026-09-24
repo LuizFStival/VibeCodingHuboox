@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fatura Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='7' width='26' height='18' rx='3' fill='%232a78d6'/%3E%3Crect x='3' y='11' width='26' height='4' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Fatura Dashboard</h1>
+        <p class="muted small">Para onde o seu dinheiro está indo</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="month-picker">
+        <span class="small muted">Fatura</span>
+        <select id="monthSelect" aria-label="Selecionar fatura"></select>
+      </label>
+      <button id="uploadBtn" class="btn primary" type="button">Subir fatura (.csv)</button>
+      <input id="fileInput" type="file" accept=".csv,text/csv" multiple hidden>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="overview" aria-selected="true">Resumo</button>
+    <button role="tab" data-tab="transactions">Lançamentos</button>
+    <button role="tab" data-tab="installments">Parcelas</button>
+    <button role="tab" data-tab="history">Mês a mês</button>
+    <button role="tab" data-tab="rules">Regras</button>
+  </nav>
+
+  <main id="app">
+    <section id="empty" class="empty" hidden>
+      <h2>Suba sua primeira fatura</h2>
+      <p class="muted">No app do Nubank: Cartão de crédito → Faturas → escolha a fatura → <em>Exportar fatura</em> (CSV).
+        Você pode subir várias de uma vez — o mês é lido do nome do arquivo (ex.: <code>Nubank_2026-10-02.csv</code>).</p>
+      <button class="btn primary" type="button" data-action="upload">Escolher arquivos</button>
+    </section>
+
+    <section id="tab-overview" class="tab-panel"></section>
+    <section id="tab-transactions" class="tab-panel" hidden></section>
+    <section id="tab-installments" class="tab-panel" hidden></section>
+    <section id="tab-history" class="tab-panel" hidden></section>
+    <section id="tab-rules" class="tab-panel" hidden></section>
+  </main>
+
+  <dialog id="uploadDialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Importar faturas</h2>
+      <p class="muted small">Confira o mês de referência (mês do vencimento). Reenviar um mês já importado substitui os lançamentos, mas mantém suas correções de categoria.</p>
+      <div id="uploadList" class="upload-list"></div>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn" type="submit">Cancelar</button>
+        <button id="uploadConfirm" value="ok" class="btn primary" type="submit">Importar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="tooltip" class="tooltip" role="status" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
