@@ -38,4 +38,4 @@ Resumo do fluxo:
 ## Apps
 
 - [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (Nubank ativo, Banco do Brasil em breve), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico. Site estático (dados no navegador), pronto para a Vercel. Local: `cd apps/fatura-dashboard && npm start`.
-- [`apps/landing-huboox`](apps/landing-huboox): landing page de uma página da Huboox (HTML com CSS/JS embutidos, identidade do Design System, SEO local e dados estruturados). Publique a pasta inteira (favicons, imagem de compartilhamento, robots.txt, sitemap.xml). Antes, busque por `[PREENCHER]` e `SEU-DOMINIO` e troque pelos dados reais.
+- [`apps/landing-huboox`](apps/landing-huboox): landing page da Huboox (huboox.com). `index.html` é a versão completa; `elementor-widget.html` é a versão para colar no widget HTML do Elementor (gerada por `build-elementor.py`). Passo a passo de publicação e SEO no WordPress em [`COMO-PUBLICAR-ELEMENTOR.md`](apps/landing-huboox/COMO-PUBLICAR-ELEMENTOR.md).
