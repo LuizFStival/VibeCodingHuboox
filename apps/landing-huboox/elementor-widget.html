@@ -505,6 +505,23 @@
   #huboox-lp .wa-float { transition: transform .3s, opacity .3s; }
   #huboox-lp .wa-float.is-hidden { opacity: 0; transform: scale(.6); pointer-events: none; }
 
+  /* Voltar ao topo: circular, acima do WhatsApp no celular */
+  #huboox-lp .to-top {
+    position: fixed; right: 16px; bottom: 16px; z-index: 59;
+    width: 48px; height: 48px; padding: 0; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer;
+    background: var(--color-secondary); color: #fff;
+    border: 1px solid rgba(255,255,255,.14);
+    box-shadow: 0 8px 24px rgba(16,24,40,.28);
+    opacity: 0; transform: translateY(12px) scale(.8); pointer-events: none;
+    transition: opacity .3s, transform .3s, bottom .3s, background-color .2s;
+  }
+  #huboox-lp .to-top svg { width: 20px; height: 20px; }
+  #huboox-lp .to-top.is-on { opacity: 1; transform: none; pointer-events: auto; }
+  #huboox-lp .to-top:hover { background: var(--color-primary); }
+  /* Na chamada final e no rodapé (fundos escuros/azuis) ele fica azul para não sumir */
+  #huboox-lp .wa-float.is-hidden ~ .to-top { background: var(--color-primary); border-color: rgba(255,255,255,.3); }
+
   /* ---------- Responsivo ---------- */
   @media (max-width: 960px) {
     #huboox-lp .hero__grid { grid-template-columns: 1fr; gap: 48px; }
@@ -532,6 +549,9 @@
     #huboox-lp .nav a:not(.btn)::after { display: none; }
     #huboox-lp .nav .btn { margin-top: 16px; min-height: 52px; font-size: 1rem; }
     #huboox-lp .wa-float { display: grid; }
+    /* WhatsApp tem 60px + 16px de margem: o topo fica 12px acima dele */
+    #huboox-lp .to-top { right: 22px; bottom: 88px; }
+    #huboox-lp .wa-float.is-hidden ~ .to-top { bottom: 16px; }
     #huboox-lp .steps { grid-template-columns: 1fr; gap: 36px; }
     #huboox-lp .steps::before { top: 28px; bottom: 28px; left: 27px; right: auto; width: 2px; height: auto;
       background: repeating-linear-gradient(180deg, var(--n300) 0 8px, transparent 8px 16px); }
@@ -563,6 +583,9 @@
   /* Ajustes para rodar dentro do Elementor */
   #huboox-lp { position: relative; overflow-x: clip; }
   #huboox-lp button, #huboox-lp button:hover, #huboox-lp button:focus { text-transform: none; letter-spacing: normal; }
+
+  /* Esconde o "voltar ao topo" do tema */
+  #ast-scroll-top, #scroll-top, #scroll-up, #back-to-top, #toTop, .scroll-to-top, .back-to-top, .scroll-top, .go-top, #kt-scroll-up, .generate-back-to-top, .ct-back-to-top, #wpfront-scroll-top-container, .elementor-scroll-to-top { display: none !important; }
 </style>
 <div id="huboox-lp" class="no-js">
 <!-- Ícone do WhatsApp reaproveitado em todos os botões -->
@@ -899,6 +922,10 @@
   <svg aria-hidden="true"><use href="#i-wa"/></svg>
 </a>
 
+<button class="to-top" type="button" aria-label="Voltar ao topo">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+</button>
+
 <script>
   // Número do WhatsApp com DDI + DDD, só números. Para trocar, mude aqui (e nos href dos botões .js-wa).
   var WHATSAPP_NUMBER = "5541996408701";
@@ -940,6 +967,11 @@
       });
       [document.querySelector("#contato .cta"), document.querySelector(".footer")].forEach(function (el) { if (el) fio.observe(el); });
     }
+
+    // Voltar ao topo
+    var toTop = document.querySelector(".to-top");
+    toTop.addEventListener("click", function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
+    window.addEventListener("scroll", function () { toTop.classList.toggle("is-on", window.scrollY > 600); }, { passive: true });
 
     var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };

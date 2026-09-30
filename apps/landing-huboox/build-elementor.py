@@ -79,6 +79,19 @@ css += f"""
 body = body.replace('document.body.classList.remove("no-js");',
                     'document.getElementById("huboox-lp").classList.remove("no-js");')
 
+# Temas e plugins costumam ter o próprio "voltar ao topo"; a landing já tem o dela
+# (acima do botão do WhatsApp). Estes seletores ficam fora do escopo de propósito.
+THEME_TOTOP = ", ".join([
+    "#ast-scroll-top", "#scroll-top", "#scroll-up", "#back-to-top", "#toTop",
+    ".scroll-to-top", ".back-to-top", ".scroll-top", ".go-top", "#kt-scroll-up",
+    ".generate-back-to-top", ".ct-back-to-top", "#wpfront-scroll-top-container",
+    ".elementor-scroll-to-top",
+])
+css += f"""
+  /* Esconde o "voltar ao topo" do tema */
+  {THEME_TOTOP} {{ display: none !important; }}
+"""
+
 out = f"""<!-- Huboox landing — versão para widget HTML do Elementor.
      Gerado por build-elementor.py a partir de index.html. Não edite à mão:
      altere index.html e rode o script de novo. -->
