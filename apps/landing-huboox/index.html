@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Huboox — Soluções digitais que resolvem a dor do seu negócio</title>
+<meta name="description" content="Sites, presença no Google e ferramentas sob medida para empresas de Curitiba e região. Fale com a Huboox no WhatsApp.">
+<meta name="theme-color" content="#0B0F19">
+<!-- [PREENCHER] URL final do site -->
+<link rel="canonical" href="https://[PREENCHER].com.br/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Huboox — Soluções digitais que resolvem a dor do seu negócio">
+<meta property="og:description" content="Sites, presença no Google e ferramentas sob medida para o seu negócio crescer no digital.">
+<meta property="og:locale" content="pt_BR">
+<!-- [PREENCHER] imagem de compartilhamento (1200x630) -->
+<!-- <meta property="og:image" content="https://[PREENCHER].com.br/og.png"> -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230B0F19'/%3E%3Ccircle cx='23' cy='32' r='11' fill='none' stroke='%230B69FF' stroke-width='7'/%3E%3Ccircle cx='41' cy='32' r='11' fill='none' stroke='%230B69FF' stroke-width='7'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --color-primary: #0B69FF;
+    --color-primary-hover: #0857D6;
+    --color-secondary: #101828;
+    --color-accent: #66A3FF;
+    --n900: #111827;
+    --n700: #344054;
+    --n500: #667085;
+    --n300: #D0D5DD;
+    --n100: #F2F4F7;
+    --bg: #FFFFFF;
+    --bg-soft: #F9FAFB;
+    --bg-tint: #EEF4FF;
+    --dark-bg: #0B0F19;
+    --dark-surface: #121826;
+    --whatsapp: #25D366;
+    --font-heading: "Sora", system-ui, sans-serif;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+    --shadow: 0 1px 2px rgba(16,24,40,.05), 0 8px 24px rgba(16,24,40,.06);
+    --container: 1140px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.5;
+    color: var(--n700);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+  }
+  img, svg { display: block; max-width: 100%; }
+  a { color: inherit; }
+  h1, h2, h3 { font-family: var(--font-heading); color: var(--color-secondary); margin: 0; letter-spacing: -0.02em; }
+  h1 { font-size: clamp(2.1rem, 5.2vw, 3.5rem); line-height: 1.1; font-weight: 700; }
+  h2 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); line-height: 1.2; font-weight: 700; }
+  h3 { font-size: 1.25rem; line-height: 1.35; font-weight: 600; }
+  p { margin: 0; }
+
+  .container { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 20px; }
+  .section { padding: clamp(64px, 9vw, 112px) 0; }
+  .section--soft { background: var(--bg-soft); }
+  .section-head { max-width: 640px; margin-bottom: 48px; }
+  .section-head p { margin-top: 14px; font-size: 1.125rem; color: var(--n500); }
+  .eyebrow {
+    display: inline-block; margin-bottom: 14px;
+    font-size: .8rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--color-primary);
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .fill { background: #FFF4CC; color: #7A5B00; border-radius: 4px; padding: 0 4px; font-weight: 500; }
+
+  /* ---------- Logo ---------- */
+  .logo {
+    font-family: var(--font-heading); font-weight: 700; font-size: 1.6rem;
+    letter-spacing: -0.03em; text-decoration: none; color: var(--color-secondary);
+    display: inline-flex; align-items: baseline;
+  }
+  .logo .oo { color: var(--color-primary); letter-spacing: -0.09em; margin-right: .04em; }
+  .logo--light { color: #fff; }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 52px; padding: 0 26px;
+    font: 600 1rem/1 var(--font-body);
+    border-radius: 12px; border: 1.5px solid transparent;
+    text-decoration: none; cursor: pointer;
+    transition: background-color .2s, transform .2s, box-shadow .2s, border-color .2s;
+  }
+  .btn svg { width: 20px; height: 20px; flex: none; }
+  .btn--primary { background: var(--color-primary); color: #fff; box-shadow: 0 6px 20px rgba(11,105,255,.3); }
+  .btn--primary:hover { background: var(--color-primary-hover); transform: translateY(-1px); }
+  .btn--secondary { background: #fff; color: var(--color-secondary); border-color: var(--n300); }
+  .btn--secondary:hover { border-color: var(--color-primary); color: var(--color-primary); }
+  .btn--ghost-light { color: #fff; border-color: rgba(255,255,255,.25); }
+  .btn--ghost-light:hover { border-color: #fff; }
+  .btn--white { background: #fff; color: var(--color-primary); }
+  .btn--white:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+  .btn:focus-visible, a:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 3px; }
+  .btn .arrow { transition: transform .2s; }
+  .btn:hover .arrow { transform: translateX(3px); }
+
+  /* ---------- Header ---------- */
+  .header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,15,25,.82);
+    backdrop-filter: saturate(160%) blur(12px);
+    -webkit-backdrop-filter: saturate(160%) blur(12px);
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .header__inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .nav { display: flex; align-items: center; gap: 28px; }
+  .nav a:not(.btn) { color: rgba(255,255,255,.72); text-decoration: none; font-size: .95rem; font-weight: 500; }
+  .nav a:not(.btn):hover { color: #fff; }
+  .nav .btn { min-height: 42px; padding: 0 18px; font-size: .92rem; }
+
+  /* ---------- Hero ---------- */
+  .hero {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(900px 500px at 85% 10%, rgba(11,105,255,.28), transparent 60%),
+      radial-gradient(600px 400px at 0% 100%, rgba(102,163,255,.12), transparent 60%),
+      var(--dark-bg);
+    color: rgba(255,255,255,.78);
+    padding: clamp(56px, 9vw, 104px) 0 clamp(64px, 10vw, 120px);
+  }
+  .hero__grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 56px; align-items: center; }
+  .hero h1 { color: #fff; }
+  .hero h1 .hl { color: var(--color-accent); }
+  .hero__sub { margin-top: 22px; font-size: clamp(1.05rem, 1.6vw, 1.25rem); max-width: 520px; }
+  .hero__ctas { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 36px; }
+  .hero__note { display: flex; align-items: center; gap: 8px; margin-top: 22px; font-size: .9rem; color: rgba(255,255,255,.55); }
+  .hero__note::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--whatsapp); box-shadow: 0 0 0 4px rgba(37,211,102,.18); }
+
+  /* Mockup (feito em CSS, sem imagem externa) */
+  .mock {
+    position: relative;
+    background: var(--dark-surface);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: var(--radius-lg);
+    padding: 14px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.45);
+    transform: perspective(1200px) rotateY(-6deg) rotateX(3deg);
+  }
+  .mock__bar { display: flex; gap: 6px; padding: 4px 6px 12px; }
+  .mock__bar i { width: 10px; height: 10px; border-radius: 50%; background: #344054; }
+  .mock__bar i:nth-child(1) { background: #FF5F57; } .mock__bar i:nth-child(2) { background: #FEBC2E; } .mock__bar i:nth-child(3) { background: #28C840; }
+  .mock__screen { background: #fff; border-radius: 12px; padding: 22px; display: grid; gap: 14px; }
+  .mock__row { display: flex; align-items: center; justify-content: space-between; }
+  .mock__line { height: 10px; border-radius: 6px; background: var(--n100); }
+  .mock__line--title { height: 18px; width: 78%; background: var(--color-secondary); }
+  .mock__line--title2 { height: 18px; width: 52%; background: var(--color-secondary); }
+  .mock__pill { height: 30px; width: 130px; border-radius: 8px; background: var(--color-primary); }
+  .mock__cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 6px; }
+  .mock__card { border: 1px solid var(--n100); border-radius: 10px; padding: 12px; display: grid; gap: 8px; }
+  .mock__icon { width: 26px; height: 26px; border-radius: 8px; background: var(--bg-tint); }
+  .mock__stat {
+    position: absolute; left: -26px; bottom: 34px;
+    background: #fff; border-radius: 14px; padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.3);
+    transform: translateZ(40px);
+  }
+  .mock__stat .ico { width: 40px; height: 40px; border-radius: 10px; background: var(--bg-tint); display: grid; place-items: center; color: var(--color-primary); }
+  .mock__stat strong { display: block; font-family: var(--font-heading); color: var(--color-secondary); font-size: 1rem; }
+  .mock__stat span { font-size: .78rem; color: var(--n500); }
+
+  /* ---------- Cards genéricos ---------- */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .card {
+    background: #fff; border: 1px solid var(--n100); border-radius: var(--radius-md);
+    padding: 28px; box-shadow: var(--shadow);
+    transition: transform .25s, box-shadow .25s, border-color .25s;
+  }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 2px 4px rgba(16,24,40,.05), 0 16px 40px rgba(16,24,40,.1); }
+  .icon-tile {
+    width: 52px; height: 52px; border-radius: 14px;
+    display: grid; place-items: center;
+    background: var(--bg-tint); color: var(--color-primary);
+    margin-bottom: 20px;
+  }
+  .icon-tile svg { width: 26px; height: 26px; }
+  .card h3 + p { margin-top: 10px; color: var(--n500); }
+
+  /* Problema */
+  .pain .icon-tile { background: #FEF3F2; color: #D92D20; }
+  .pain__quote { font-family: var(--font-heading); font-weight: 600; color: var(--color-secondary); font-size: 1.15rem; }
+  .bridge {
+    margin-top: 40px; padding: 22px 26px; border-radius: var(--radius-md);
+    background: var(--bg-tint); color: var(--color-secondary);
+    display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    font-weight: 500;
+  }
+  .bridge strong { color: var(--color-primary); }
+
+  /* Serviços */
+  .service { display: flex; flex-direction: column; }
+  .service ul { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 10px; }
+  .service li { display: flex; gap: 10px; align-items: flex-start; font-size: .95rem; }
+  .service li::before {
+    content: ""; flex: none; width: 18px; height: 18px; margin-top: 2px; border-radius: 50%;
+    background: var(--bg-tint) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230B69FF' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/11px no-repeat;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+    padding: 6px 12px; border-radius: 999px; background: var(--bg-tint);
+    color: var(--color-primary); font-size: .82rem; font-weight: 500; margin-bottom: 18px;
+  }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary); }
+
+  /* Cases */
+  .case { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .case__img {
+    aspect-ratio: 16 / 10;
+    background:
+      linear-gradient(135deg, rgba(11,105,255,.12), rgba(102,163,255,.05)),
+      repeating-linear-gradient(45deg, var(--n100) 0 12px, #fff 12px 24px);
+    display: grid; place-items: center; text-align: center;
+    color: var(--n500); font-size: .85rem; border-bottom: 1px solid var(--n100);
+  }
+  .case__img svg { width: 34px; height: 34px; margin: 0 auto 8px; color: var(--n300); }
+  /* Quando tiver a imagem real: <img src="case-1.webp" alt="..." loading="lazy" width="800" height="500"> dentro de .case__img */
+  .case__img img { width: 100%; height: 100%; object-fit: cover; }
+  .case__body { padding: 24px 26px 28px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+  .case__tag { font-size: .78rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--color-primary); }
+  .case dl { margin: 0; display: grid; gap: 12px; }
+  .case dt { font-size: .78rem; font-weight: 600; color: var(--n500); text-transform: uppercase; letter-spacing: .06em; }
+  .case dd { margin: 4px 0 0; color: var(--n700); }
+  .case__result {
+    margin-top: auto; padding: 14px 16px; border-radius: 12px; background: var(--bg-soft);
+    border: 1px solid var(--n100);
+  }
+  .case__result dd { font-family: var(--font-heading); font-weight: 600; color: var(--color-secondary); }
+
+  /* Como funciona */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; counter-reset: step; position: relative; }
+  .steps::before {
+    content: ""; position: absolute; top: 28px; left: 16%; right: 16%; height: 2px;
+    background: repeating-linear-gradient(90deg, var(--n300) 0 8px, transparent 8px 16px);
+  }
+  .step { position: relative; text-align: center; padding: 0 12px; }
+  .step__num {
+    width: 56px; height: 56px; margin: 0 auto 22px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--color-primary); color: #fff;
+    font: 700 1.25rem/1 var(--font-heading);
+    box-shadow: 0 0 0 8px var(--bg-soft), 0 8px 24px rgba(11,105,255,.35);
+    position: relative;
+  }
+  .step p { margin-top: 10px; color: var(--n500); max-width: 300px; margin-left: auto; margin-right: auto; }
+  .step small { display: inline-block; margin-top: 14px; font-size: .82rem; color: var(--color-primary); font-weight: 500; }
+
+  /* CTA final */
+  .cta {
+    position: relative; overflow: hidden;
+    border-radius: var(--radius-lg);
+    padding: clamp(40px, 7vw, 72px);
+    background:
+      radial-gradient(600px 300px at 100% 0%, rgba(102,163,255,.45), transparent 60%),
+      linear-gradient(135deg, #0B69FF, #0A4FD1);
+    color: rgba(255,255,255,.85);
+    display: grid; grid-template-columns: 1.4fr auto; align-items: center; gap: 32px;
+  }
+  .cta::after {
+    content: ""; position: absolute; right: -60px; bottom: -80px; width: 260px; height: 260px;
+    border: 36px solid rgba(255,255,255,.08); border-radius: 50%;
+    box-shadow: 150px 0 0 -36px transparent;
+  }
+  .cta h2 { color: #fff; }
+  .cta p { margin-top: 14px; font-size: 1.125rem; max-width: 520px; }
+  .cta__actions { position: relative; z-index: 1; display: grid; gap: 12px; justify-items: center; }
+  .cta__actions small { color: rgba(255,255,255,.7); font-size: .85rem; }
+
+  /* Rodapé */
+  .footer { background: var(--dark-bg); color: rgba(255,255,255,.6); padding: 48px 0 32px; font-size: .95rem; }
+  .footer__inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  .footer__info { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .footer__info span, .footer__info a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+  .footer__info a:hover { color: #fff; }
+  .footer__info svg { width: 18px; height: 18px; }
+  .footer__bottom { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.08); font-size: .82rem; color: rgba(255,255,255,.4); }
+
+  /* WhatsApp flutuante (só mobile) */
+  .wa-float {
+    position: fixed; right: 16px; bottom: 16px; z-index: 60;
+    width: 60px; height: 60px; border-radius: 50%;
+    background: var(--whatsapp); color: #fff;
+    display: none; place-items: center;
+    box-shadow: 0 10px 28px rgba(37,211,102,.45), 0 2px 6px rgba(0,0,0,.2);
+    transition: transform .2s;
+  }
+  .wa-float svg { width: 32px; height: 32px; }
+  .wa-float:active { transform: scale(.94); }
+  .wa-float::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid var(--whatsapp); animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.5); opacity: 0; } }
+
+  /* Animação de entrada */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  .no-js .reveal { opacity: 1; transform: none; }
+
+  /* ---------- Responsivo ---------- */
+  @media (max-width: 960px) {
+    .hero__grid { grid-template-columns: 1fr; gap: 48px; }
+    .mock { transform: none; max-width: 520px; }
+    .mock__stat { left: auto; right: 12px; bottom: -22px; }
+    .grid-3 { grid-template-columns: 1fr; max-width: 560px; }
+    .cases.grid-3 { grid-template-columns: repeat(2, 1fr); max-width: none; }
+    .cta { grid-template-columns: 1fr; }
+    .cta__actions { justify-items: start; }
+  }
+  @media (max-width: 768px) {
+    .nav a:not(.btn) { display: none; }
+    .wa-float { display: grid; }
+    .steps { grid-template-columns: 1fr; gap: 36px; }
+    .steps::before { top: 28px; bottom: 28px; left: 27px; right: auto; width: 2px; height: auto;
+      background: repeating-linear-gradient(180deg, var(--n300) 0 8px, transparent 8px 16px); }
+    .step { text-align: left; padding: 0 0 0 80px; }
+    .step__num { position: absolute; left: 0; top: 0; margin: 0; }
+    .step p { margin-left: 0; }
+    .footer { padding-bottom: 96px; }
+  }
+  @media (max-width: 640px) {
+    .cases.grid-3 { grid-template-columns: 1fr; }
+    .hero__ctas .btn { width: 100%; }
+    .nav .btn span { display: none; }
+    .nav .btn { width: 44px; padding: 0; }
+    .card { padding: 24px; }
+    .bridge .btn { width: 100%; }
+    .cta__actions, .cta__actions .btn { width: 100%; }
+    .cta__actions { justify-items: stretch; text-align: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body class="no-js">
+
+<!-- Ícone do WhatsApp reaproveitado em todos os botões -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.08-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.48s1.07 2.88 1.21 3.08c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.7.63.71.23 1.36.2 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35M12.05 21.5h-.01a9.4 9.4 0 0 1-4.8-1.32l-.34-.2-3.57.94.95-3.48-.22-.36A9.4 9.4 0 0 1 2.6 12.05c0-5.2 4.24-9.44 9.46-9.44 2.52 0 4.9.99 6.68 2.77a9.38 9.38 0 0 1 2.76 6.68c0 5.21-4.24 9.44-9.45 9.44m8.04-17.49A11.3 11.3 0 0 0 12.05.7C5.78.7.68 5.8.68 12.05c0 2 .52 3.95 1.52 5.67L.58 23.6l6.02-1.58a11.33 11.33 0 0 0 5.44 1.39h.01c6.26 0 11.36-5.1 11.36-11.36 0-3.03-1.18-5.89-3.32-8.03"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></symbol>
+</svg>
+
+<header class="header">
+  <div class="container header__inner">
+    <a href="#topo" class="logo logo--light" aria-label="Huboox — início">Hub<span class="oo">oo</span>x</a>
+    <nav class="nav" aria-label="Principal">
+      <a href="#servicos">O que fazemos</a>
+      <a href="#cases">Cases</a>
+      <a href="#como-funciona">Como funciona</a>
+      <a class="btn btn--primary js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio.">
+        <svg aria-hidden="true"><use href="#i-wa"/></svg><span>Falar no WhatsApp</span>
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="topo">
+
+  <!-- 1. HERO -->
+  <section class="hero">
+    <div class="container hero__grid">
+      <div>
+        <span class="eyebrow" style="color:var(--color-accent)">Huboox · Curitiba/PR</span>
+        <h1>Soluções digitais que resolvem <span class="hl">a dor do seu negócio.</span></h1>
+        <p class="hero__sub">Criamos sites, colocamos sua empresa no Google e desenvolvemos ferramentas que tiram trabalho manual do seu dia.</p>
+        <div class="hero__ctas">
+          <a class="btn btn--primary js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio.">
+            <svg aria-hidden="true"><use href="#i-wa"/></svg>
+            Falar no WhatsApp
+            <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+          </a>
+          <a class="btn btn--ghost-light" href="#servicos">Ver o que fazemos</a>
+        </div>
+        <p class="hero__note">Conversa rápida, sem compromisso.</p>
+      </div>
+
+      <div class="mock" aria-hidden="true">
+        <div class="mock__bar"><i></i><i></i><i></i></div>
+        <div class="mock__screen">
+          <div class="mock__row">
+            <span class="logo" style="font-size:1rem">Hub<span class="oo">oo</span>x</span>
+            <div class="mock__line" style="width:90px"></div>
+          </div>
+          <div class="mock__line mock__line--title" style="margin-top:12px"></div>
+          <div class="mock__line mock__line--title2"></div>
+          <div class="mock__line" style="width:88%"></div>
+          <div class="mock__line" style="width:64%"></div>
+          <div class="mock__pill"></div>
+          <div class="mock__cards">
+            <div class="mock__card"><div class="mock__icon"></div><div class="mock__line"></div><div class="mock__line" style="width:70%"></div></div>
+            <div class="mock__card"><div class="mock__icon"></div><div class="mock__line"></div><div class="mock__line" style="width:70%"></div></div>
+            <div class="mock__card"><div class="mock__icon"></div><div class="mock__line"></div><div class="mock__line" style="width:70%"></div></div>
+          </div>
+        </div>
+        <div class="mock__stat">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 20V14M12 20V8M18 20V4"/></svg></div>
+          <div><strong>Mais clientes</strong><span>chegando pelo digital</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. O PROBLEMA -->
+  <section class="section" id="problema">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">O problema</span>
+        <h2>Seu negócio é bom. Mas no digital, ninguém vê.</h2>
+        <p>Se alguma dessas frases parece familiar, a gente pode ajudar.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card pain reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M8 11h6"/></svg></div>
+          <p class="pain__quote">“Não apareço no Google.”</p>
+          <p style="margin-top:10px;color:var(--n500)">O cliente procura o que você vende, encontra o concorrente e nem fica sabendo que você existe.</p>
+        </article>
+        <article class="card pain reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 8h18M9 21h6M12 18v3M10 12l4 3M14 12l-4 3"/></svg></div>
+          <p class="pain__quote">“Meu site é feio ou antigo.”</p>
+          <p style="margin-top:10px;color:var(--n500)">Um site lento, confuso ou fora do ar passa desconfiança. O cliente fecha e vai embora.</p>
+        </article>
+        <article class="card pain reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg></div>
+          <p class="pain__quote">“Faço tudo na mão.”</p>
+          <p style="margin-top:10px;color:var(--n500)">Planilha, caderno, mensagem perdida. Horas por semana gastas em tarefas que poderiam ser automáticas.</p>
+        </article>
+      </div>
+      <div class="bridge reveal">
+        <span>A boa notícia: <strong>tudo isso tem solução.</strong> E não precisa ser complicado.</span>
+        <a class="btn btn--secondary" href="#servicos">Ver soluções <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. O QUE FAZEMOS -->
+  <section class="section section--soft" id="servicos">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">O que fazemos</span>
+        <h2>Do planejamento ao resultado.</h2>
+        <p>Três frentes para colocar sua empresa no digital com clareza, design e resultado.</p>
+      </div>
+      <div class="grid-3">
+        <article class="card service reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h6M7 16h4"/></svg></div>
+          <h3>Sites e landing pages</h3>
+          <p>Páginas bonitas, rápidas e feitas para o cliente entrar em contato com você.</p>
+          <ul>
+            <li>Funciona bem no celular</li>
+            <li>Botão direto para o seu WhatsApp</li>
+            <li>Pronto para aparecer no Google</li>
+          </ul>
+        </article>
+        <article class="card service reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></div>
+          <h3>Presença digital</h3>
+          <p>Sua empresa fácil de achar e bem apresentada onde o cliente procura.</p>
+          <ul>
+            <li>Perfil no Google Meu Negócio</li>
+            <li>Redes sociais organizadas</li>
+            <li>Informações certas em todo lugar</li>
+          </ul>
+        </article>
+        <article class="card service reveal">
+          <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></div>
+          <h3>Ferramentas sob medida</h3>
+          <p>Sistemas simples que fazem o trabalho repetitivo por você.</p>
+          <ul>
+            <li>Agendamentos, pedidos e cadastros</li>
+            <li>Relatórios sem planilha manual</li>
+            <li>Feito do jeito que sua empresa trabalha</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. CASES -->
+  <section class="section" id="cases">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Cases</span>
+        <h2>Quem já resolveu com a Huboox.</h2>
+        <p>Negócios reais, problemas reais, resultados reais.</p>
+      </div>
+      <div class="grid-3 cases">
+
+        <!-- CASE 1 -->
+        <article class="card case reveal">
+          <div class="case__img">
+            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-1.webp" alt="Site do cliente X" loading="lazy" width="800" height="500"> -->
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
+          </div>
+          <div class="case__body">
+            <span class="case__tag">[PREENCHER] Segmento</span>
+            <h3>[PREENCHER] Nome do cliente</h3>
+            <dl>
+              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: site novo com botão de WhatsApp e perfil no Google.</dd></div>
+              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: +X% de contatos em Y meses.</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <!-- CASE 2 -->
+        <article class="card case reveal">
+          <div class="case__img">
+            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-2.webp" alt="Projeto do cliente Y" loading="lazy" width="800" height="500"> -->
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
+          </div>
+          <div class="case__body">
+            <span class="case__tag">[PREENCHER] Segmento</span>
+            <h3>[PREENCHER] Nome do cliente</h3>
+            <dl>
+              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: ferramenta de agendamento online.</dd></div>
+              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: X horas por semana economizadas.</dd></div>
+            </dl>
+          </div>
+        </article>
+
+        <!-- CASE 3 -->
+        <article class="card case reveal">
+          <div class="case__img">
+            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-3.webp" alt="Projeto do cliente Z" loading="lazy" width="800" height="500"> -->
+            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
+          </div>
+          <div class="case__body">
+            <span class="case__tag">[PREENCHER] Segmento</span>
+            <h3>[PREENCHER] Nome do cliente</h3>
+            <dl>
+              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: Google Meu Negócio e redes organizadas.</dd></div>
+              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: 1º lugar no Google para "X em Curitiba".</dd></div>
+            </dl>
+          </div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. COMO FUNCIONA -->
+  <section class="section section--soft" id="como-funciona">
+    <div class="container">
+      <div class="section-head reveal" style="margin-left:auto;margin-right:auto;text-align:center">
+        <span class="eyebrow">Como funciona</span>
+        <h2>Simples, em 3 passos.</h2>
+        <p>Sem papo técnico. Você fala do problema, a gente resolve.</p>
+      </div>
+      <ol class="steps" style="list-style:none;padding:0;margin:0">
+        <li class="step reveal">
+          <div class="step__num">1</div>
+          <h3>Conversa sobre a dor</h3>
+          <p>Você conta o que está travando o seu negócio. A gente escuta e entende.</p>
+          <small>Pelo WhatsApp ou em uma chamada rápida</small>
+        </li>
+        <li class="step reveal">
+          <div class="step__num">2</div>
+          <h3>Proposta</h3>
+          <p>Mostramos a solução, o prazo e o valor. Tudo claro, sem letra miúda.</p>
+          <small>Em até [PREENCHER] dias úteis</small>
+        </li>
+        <li class="step reveal">
+          <div class="step__num">3</div>
+          <h3>Entrega</h3>
+          <p>Colocamos no ar, explicamos como usar e seguimos junto com você.</p>
+          <small>Com suporte depois da entrega</small>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 6. CHAMADA FINAL -->
+  <section class="section" id="contato">
+    <div class="container">
+      <div class="cta reveal">
+        <div style="position:relative;z-index:1">
+          <h2>Qual é a dor do seu negócio hoje?</h2>
+          <p>Conta pra gente no WhatsApp. Em poucos minutos você sabe como resolver.</p>
+        </div>
+        <div class="cta__actions">
+          <a class="btn btn--white js-wa" href="#contato" data-msg="Olá! Quero resolver uma dor do meu negócio. Podemos conversar?">
+            <svg aria-hidden="true"><use href="#i-wa"/></svg>
+            Falar no WhatsApp
+            <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+          </a>
+          <small>Resposta em horário comercial.</small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- 7. RODAPÉ -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer__inner">
+      <a href="#topo" class="logo logo--light">Hub<span class="oo">oo</span>x</a>
+      <div class="footer__info">
+        <span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+          Curitiba/PR
+        </span>
+        <!-- [PREENCHER] usuário do Instagram no href e no texto -->
+        <a href="https://instagram.com/[PREENCHER]" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6" fill="currentColor"/></svg>
+          @[PREENCHER]
+        </a>
+      </div>
+    </div>
+    <div class="footer__bottom">
+      © <span id="ano">2026</span> Huboox. Soluções digitais que resolvem a dor do seu negócio.
+      <!-- [PREENCHER] CNPJ, se quiser exibir -->
+    </div>
+  </div>
+</footer>
+
+<!-- Botão flutuante de WhatsApp (aparece só no mobile) -->
+<a class="wa-float js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio." aria-label="Falar no WhatsApp">
+  <svg aria-hidden="true"><use href="#i-wa"/></svg>
+</a>
+
+<script>
+  // [PREENCHER] Número do WhatsApp com DDI + DDD, só números. Ex.: "5541999999999"
+  var WHATSAPP_NUMBER = "[PREENCHER]";
+
+  (function () {
+    document.body.classList.remove("no-js");
+
+    // Monta os links do WhatsApp com a mensagem de cada botão
+    var validNumber = /^\d{12,13}$/.test(WHATSAPP_NUMBER);
+    document.querySelectorAll(".js-wa").forEach(function (a) {
+      if (!validNumber) return; // enquanto o número não for preenchido, os botões levam para #contato
+      var msg = a.getAttribute("data-msg") || "";
+      a.href = "https://wa.me/" + WHATSAPP_NUMBER + (msg ? "?text=" + encodeURIComponent(msg) : "");
+      a.target = "_blank";
+      a.rel = "noopener";
+    });
+
+    document.getElementById("ano").textContent = new Date().getFullYear();
+
+    // Animação leve de entrada
+    var items = document.querySelectorAll(".reveal");
+    if (!("IntersectionObserver" in window)) {
+      items.forEach(function (el) { el.classList.add("is-visible"); });
+      return;
+    }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("is-visible"); io.unobserve(e.target); }
+      });
+    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    items.forEach(function (el) { io.observe(el); });
+  })();
+</script>
+</body>
+</html>

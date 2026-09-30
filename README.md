@@ -38,3 +38,4 @@ Resumo do fluxo:
 ## Apps
 
 - [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (Nubank ativo, Banco do Brasil em breve), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico. Site estático (dados no navegador), pronto para a Vercel. Local: `cd apps/fatura-dashboard && npm start`.
+- [`apps/landing-huboox`](apps/landing-huboox): landing page de uma página da Huboox (HTML único com CSS/JS embutidos, identidade do Design System). Antes de publicar, busque por `[PREENCHER]` e troque pelos dados reais (número do WhatsApp, Instagram, cases, URL).
