@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# [PREENCHER] troque SEU-DOMINIO.com.br pelo domínio final
+Sitemap: https://SEU-DOMINIO.com.br/sitemap.xml

@@ -3,21 +3,55 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Huboox — Soluções digitais que resolvem a dor do seu negócio</title>
-<meta name="description" content="Sites, presença no Google e ferramentas sob medida para empresas de Curitiba e região. Fale com a Huboox no WhatsApp.">
+<title>Criação de Sites em Curitiba | Huboox — Soluções Digitais</title>
+<meta name="description" content="Criação de sites, landing pages, Google Meu Negócio e sistemas sob medida em Curitiba. Soluções digitais que resolvem a dor do seu negócio. Fale no WhatsApp.">
+<meta name="robots" content="index, follow, max-image-preview:large">
 <meta name="theme-color" content="#0B0F19">
-<!-- [PREENCHER] URL final do site -->
-<link rel="canonical" href="https://[PREENCHER].com.br/">
+<meta name="geo.region" content="BR-PR">
+<meta name="geo.placename" content="Curitiba">
+<!-- [PREENCHER] Quando o domínio estiver definido, descomente as 3 linhas abaixo trocando SEU-DOMINIO.com.br
+     (e faça o mesmo em robots.txt e sitemap.xml) -->
+<!-- <link rel="canonical" href="https://SEU-DOMINIO.com.br/"> -->
+<!-- <meta property="og:url" content="https://SEU-DOMINIO.com.br/"> -->
+<!-- <meta property="og:image" content="https://SEU-DOMINIO.com.br/og-image.png"> -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Huboox — Soluções digitais que resolvem a dor do seu negócio">
-<meta property="og:description" content="Sites, presença no Google e ferramentas sob medida para o seu negócio crescer no digital.">
+<meta property="og:site_name" content="Huboox">
 <meta property="og:locale" content="pt_BR">
-<!-- [PREENCHER] imagem de compartilhamento (1200x630) -->
-<!-- <meta property="og:image" content="https://[PREENCHER].com.br/og.png"> -->
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230B0F19'/%3E%3Ccircle cx='23' cy='32' r='11' fill='none' stroke='%230B69FF' stroke-width='7'/%3E%3Ccircle cx='41' cy='32' r='11' fill='none' stroke='%230B69FF' stroke-width='7'/%3E%3C/svg%3E">
+<meta property="og:title" content="Huboox — Soluções digitais que resolvem a dor do seu negócio">
+<meta property="og:description" content="Sites, presença no Google e ferramentas sob medida para empresas de Curitiba crescerem no digital.">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@600;700&display=swap" rel="stylesheet">
+<!-- Fontes carregadas sem travar a primeira exibição da página -->
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@600;700&display=swap"></noscript>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ProfessionalService",
+  "name": "Huboox",
+  "description": "Soluções digitais que resolvem a dor do seu negócio: criação de sites e landing pages, presença digital no Google e redes sociais, e ferramentas sob medida.",
+  "telephone": "+55 41 99640-8701",
+  "address": { "@type": "PostalAddress", "addressLocality": "Curitiba", "addressRegion": "PR", "addressCountry": "BR" },
+  "areaServed": [{ "@type": "City", "name": "Curitiba" }, { "@type": "Country", "name": "Brasil" }],
+  "sameAs": ["https://www.instagram.com/huboox.digital/"],
+  "knowsAbout": ["Criação de sites", "Landing pages", "Google Meu Negócio", "Redes sociais", "Sistemas sob medida"],
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "Serviços",
+    "itemListElement": [
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Criação de sites e landing pages" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Presença digital: Google Meu Negócio e redes sociais" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Ferramentas e sistemas sob medida" } }
+    ]
+  }
+}
+</script>
 <style>
   :root {
     --color-primary: #0B69FF;
@@ -239,6 +273,34 @@
   }
   .case__result dd { font-family: var(--font-heading); font-weight: 600; color: var(--color-secondary); }
 
+  /* Prévia desenhada dos sites (troque por print real quando quiser) */
+  a.case__img { display: block; text-decoration: none; background: var(--bg-soft); padding: 22px 22px 0; overflow: hidden; }
+  .site {
+    height: 100%; border-radius: 10px 10px 0 0; overflow: hidden; background: #fff;
+    box-shadow: 0 10px 30px rgba(16,24,40,.12); transition: transform .4s cubic-bezier(.2,.7,.2,1);
+  }
+  .case:hover .site { transform: translateY(-6px); }
+  .site__bar { display: flex; align-items: center; gap: 5px; padding: 8px 10px; background: var(--n100); }
+  .site__bar i { width: 7px; height: 7px; border-radius: 50%; background: var(--n300); }
+  .site__bar span { margin-left: 8px; flex: 1; min-width: 0; padding: 3px 10px; border-radius: 6px; background: #fff; font-size: .68rem; color: var(--n500); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .site__body { height: 100%; padding: 22px 20px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; text-align: left; }
+  .site__body strong { font-family: var(--font-heading); font-size: 1.3rem; line-height: 1.15; }
+  .site__kicker { font-size: .66rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+  .site__btn { width: 96px; height: 22px; border-radius: 6px; margin-top: 6px; }
+  .site--a .site__body { background: linear-gradient(135deg, #0F2A44, #1D4E73); color: #fff; }
+  .site--a .site__kicker { color: #8CC8F0; } .site--a .site__btn { background: #fff; }
+  .site--b .site__body { background: linear-gradient(135deg, #F3EEFF, #E6F6EF); color: #2B2A4C; }
+  .site--b .site__kicker { color: #7A5AF8; } .site--b .site__btn { background: #7A5AF8; }
+  .case__link { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-weight: 600; font-size: .92rem; color: var(--color-primary); text-decoration: none; }
+  .case__link svg { width: 16px; height: 16px; transition: transform .2s; }
+  .case__link:hover svg { transform: translateX(3px); }
+  .case--next { border: 2px dashed var(--n300); box-shadow: none; background: var(--bg-soft); }
+  .case--next:hover { border-color: var(--color-primary); }
+  .case__next { flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; padding: 32px 28px; }
+  .case__next .icon-tile { margin-bottom: 4px; }
+  .case__next p { color: var(--n500); }
+  .case__next .btn { margin-top: 8px; }
+
   /* Como funciona */
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; counter-reset: step; position: relative; }
   .steps::before {
@@ -285,7 +347,7 @@
   .footer__info span, .footer__info a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
   .footer__info a:hover { color: #fff; }
   .footer__info svg { width: 18px; height: 18px; }
-  .footer__bottom { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.08); font-size: .82rem; color: rgba(255,255,255,.4); }
+  .footer__bottom { margin-top: 32px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,.08); font-size: .82rem; color: rgba(255,255,255,.6); }
 
   /* WhatsApp flutuante (só mobile) */
   .wa-float {
@@ -331,6 +393,7 @@
 
   /* Texto digitado no título */
   .hero h1 .hl { display: block; min-height: 2.2em; }
+  .typed::before { content: attr(data-text); }
   .caret {
     display: inline-block; width: 3px; height: .9em; margin-left: 4px; vertical-align: -0.08em;
     background: var(--color-accent); border-radius: 2px; animation: blink 1s steps(1) infinite;
@@ -455,6 +518,19 @@
   .cta__left .btn { margin-top: 28px; }
   .cta__left small { display: block; margin-top: 12px; color: rgba(255,255,255,.7); font-size: .85rem; }
 
+  /* Botão do menu (só mobile) */
+  .menu-btn {
+    display: none; flex-direction: column; justify-content: center; gap: 5px;
+    width: 44px; height: 44px; padding: 0 11px; border-radius: 10px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); cursor: pointer;
+  }
+  .menu-btn span { display: block; height: 2px; border-radius: 2px; background: #fff; transition: transform .3s, opacity .2s; }
+  .header.is-open .menu-btn span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .header.is-open .menu-btn span:nth-child(2) { opacity: 0; }
+  .header.is-open .menu-btn span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+  .wa-float { transition: transform .3s, opacity .3s; }
+  .wa-float.is-hidden { opacity: 0; transform: scale(.6); pointer-events: none; }
+
   /* ---------- Responsivo ---------- */
   @media (max-width: 960px) {
     .hero__grid { grid-template-columns: 1fr; gap: 48px; }
@@ -467,7 +543,20 @@
     .toast { right: 8px; top: 40px; }
   }
   @media (max-width: 768px) {
-    .nav a:not(.btn) { display: none; }
+    .menu-btn { display: inline-flex; }
+    .nav {
+      position: absolute; top: 100%; left: 0; right: 0;
+      flex-direction: column; align-items: stretch; gap: 4px;
+      padding: 12px 20px 24px;
+      background: var(--dark-bg); border-bottom: 1px solid rgba(255,255,255,.08);
+      box-shadow: 0 24px 40px rgba(0,0,0,.35);
+      opacity: 0; visibility: hidden; transform: translateY(-8px);
+      transition: opacity .25s, transform .25s, visibility 0s .25s;
+    }
+    .header.is-open .nav { opacity: 1; visibility: visible; transform: none; transition: opacity .25s, transform .25s; }
+    .nav a:not(.btn) { padding: 14px 4px; font-size: 1.1rem; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .nav a:not(.btn)::after { display: none; }
+    .nav .btn { margin-top: 16px; min-height: 52px; font-size: 1rem; }
     .wa-float { display: grid; }
     .steps { grid-template-columns: 1fr; gap: 36px; }
     .steps::before { top: 28px; bottom: 28px; left: 27px; right: auto; width: 2px; height: auto;
@@ -476,13 +565,14 @@
     .step__num { position: absolute; left: 0; top: 0; margin: 0; }
     .step p { margin-left: 0; }
     .steps::after { top: 28px; left: 27px; width: 2px; height: calc(100% - 56px); transform-origin: top; transform: scaleY(var(--p, 0)); }
-    .footer { padding-bottom: 96px; }
+    .footer { padding: 40px 0 24px; text-align: center; }
+    .footer__inner { flex-direction: column; gap: 16px; }
+    .footer__info { justify-content: center; gap: 12px 20px; }
+    .footer__bottom { margin-top: 24px; }
   }
   @media (max-width: 640px) {
     .cases.grid-3 { grid-template-columns: 1fr; }
     .hero__ctas .btn { width: 100%; }
-    .nav .btn span { display: none; }
-    .nav .btn { width: 44px; padding: 0; }
     .card { padding: 24px; }
     .bridge .btn { width: 100%; }
     .cta__left .btn { width: 100%; }
@@ -510,11 +600,14 @@
 <header class="header">
   <div class="container header__inner">
     <a href="#topo" class="logo logo--light" aria-label="Huboox — início">Hub<span class="oo">oo</span>x</a>
-    <nav class="nav" aria-label="Principal">
+    <button class="menu-btn" type="button" aria-expanded="false" aria-controls="menu" aria-label="Abrir menu">
+      <span></span><span></span><span></span>
+    </button>
+    <nav class="nav" id="menu" aria-label="Principal">
       <a href="#servicos">O que fazemos</a>
       <a href="#cases">Cases</a>
       <a href="#como-funciona">Como funciona</a>
-      <a class="btn btn--primary js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio.">
+      <a class="btn btn--primary js-wa" href="https://wa.me/5541996408701?text=Ol%C3%A1%2C%20Huboox%21%20Vim%20pelo%20site%20e%20quero%20conversar%20sobre%20o%20digital%20do%20meu%20neg%C3%B3cio." data-msg="Olá, Huboox! Vim pelo site e quero conversar sobre o digital do meu negócio.">
         <svg aria-hidden="true"><use href="#i-wa"/></svg><span>Falar no WhatsApp</span>
       </a>
     </nav>
@@ -527,14 +620,11 @@
   <section class="hero">
     <div class="container hero__grid">
       <div>
-        <span class="eyebrow hero-in" style="color:var(--color-accent)">Huboox · Curitiba/PR</span>
-        <h1 class="hero-in">
-          <span class="sr-only">Soluções digitais que resolvem a dor do seu negócio.</span>
-          <span aria-hidden="true">Soluções digitais que resolvem <span class="hl"><span class="typed">a dor do seu negócio.</span><span class="caret"></span></span></span>
-        </h1>
+        <span class="eyebrow hero-in" style="color:var(--color-accent)">Sites e soluções digitais em Curitiba/PR</span>
+        <h1>Soluções digitais que resolvem <span class="hl"><span class="sr-only">a dor do seu negócio.</span><span class="typed" data-text="a dor do seu negócio." aria-hidden="true"></span><span class="caret" aria-hidden="true"></span></span></h1>
         <p class="hero__sub hero-in">Criamos sites, colocamos sua empresa no Google e desenvolvemos ferramentas que tiram trabalho manual do seu dia.</p>
         <div class="hero__ctas hero-in">
-          <a class="btn btn--primary js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio.">
+          <a class="btn btn--primary js-wa" href="https://wa.me/5541996408701?text=Ol%C3%A1%2C%20Huboox%21%20Vi%20o%20site%20de%20voc%C3%AAs%20e%20quero%20entender%20como%20podem%20ajudar%20o%20meu%20neg%C3%B3cio%20a%20crescer%20no%20digital." data-msg="Olá, Huboox! Vi o site de vocês e quero entender como podem ajudar o meu negócio a crescer no digital.">
             <svg aria-hidden="true"><use href="#i-wa"/></svg>
             Falar no WhatsApp
             <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
@@ -626,12 +716,12 @@
       <div class="section-head reveal">
         <span class="eyebrow">O que fazemos</span>
         <h2>Do planejamento ao resultado.</h2>
-        <p>Três frentes para colocar sua empresa no digital com clareza, design e resultado.</p>
+        <p>Três frentes para colocar sua empresa de Curitiba e região no digital, com clareza, design e resultado.</p>
       </div>
       <div class="grid-3">
         <article class="card service glow reveal">
           <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h6M7 16h4"/></svg></div>
-          <h3>Sites e landing pages</h3>
+          <h3>Criação de sites e landing pages</h3>
           <p>Páginas bonitas, rápidas e feitas para o cliente entrar em contato com você.</p>
           <ul>
             <li>Funciona bem no celular</li>
@@ -641,7 +731,7 @@
         </article>
         <article class="card service glow reveal">
           <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg></div>
-          <h3>Presença digital</h3>
+          <h3>Presença digital no Google</h3>
           <p>Sua empresa fácil de achar e bem apresentada onde o cliente procura.</p>
           <ul>
             <li>Perfil no Google Meu Negócio</li>
@@ -651,7 +741,7 @@
         </article>
         <article class="card service glow reveal">
           <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></div>
-          <h3>Ferramentas sob medida</h3>
+          <h3>Sistemas e ferramentas sob medida</h3>
           <p>Sistemas simples que fazem o trabalho repetitivo por você.</p>
           <ul>
             <li>Agendamentos, pedidos e cadastros</li>
@@ -669,55 +759,72 @@
       <div class="section-head reveal">
         <span class="eyebrow">Cases</span>
         <h2>Quem já resolveu com a Huboox.</h2>
-        <p>Negócios reais, problemas reais, resultados reais.</p>
+        <p>Negócios reais que já estão no ar com a Huboox.</p>
       </div>
       <div class="grid-3 cases">
 
         <!-- CASE 1 -->
         <article class="card case glow reveal">
-          <div class="case__img">
-            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-1.webp" alt="Site do cliente X" loading="lazy" width="800" height="500"> -->
-            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
-          </div>
+          <a class="case__img" href="https://drdiegotareszkiewicz.com.br/" target="_blank" rel="noopener" aria-label="Abrir o site de Dr. Diego Tareszkiewicz">
+            <!-- Para usar o print real: troque o <div class="site"> por
+                 <img src="case-diego.webp" alt="Site de Dr. Diego Tareszkiewicz" loading="lazy" width="800" height="500"> -->
+            <div class="site site--a" aria-hidden="true">
+              <div class="site__bar"><i></i><i></i><i></i><span>drdiegotareszkiewicz.com.br</span></div>
+              <div class="site__body">
+                <span class="site__kicker">Médico</span>
+                <strong>Dr. Diego<br>Tareszkiewicz</strong>
+                <span class="site__btn"></span>
+              </div>
+            </div>
+          </a>
           <div class="case__body">
-            <span class="case__tag">[PREENCHER] Segmento</span>
-            <h3>[PREENCHER] Nome do cliente</h3>
+            <span class="case__tag">Saúde · [PREENCHER] especialidade</span>
+            <h3>Dr. Diego Tareszkiewicz</h3>
             <dl>
-              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: site novo com botão de WhatsApp e perfil no Google.</dd></div>
-              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: +X% de contatos em Y meses.</dd></div>
+              <div><dt>O que foi feito</dt><dd>Site profissional para apresentar o trabalho do médico e facilitar o contato de novos pacientes.</dd></div>
+              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: mais pacientes chegando pelo site.</dd></div>
             </dl>
+            <a class="case__link" href="https://drdiegotareszkiewicz.com.br/" target="_blank" rel="noopener">Ver site no ar <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
           </div>
         </article>
 
         <!-- CASE 2 -->
         <article class="card case glow reveal">
-          <div class="case__img">
-            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-2.webp" alt="Projeto do cliente Y" loading="lazy" width="800" height="500"> -->
-            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
-          </div>
+          <!-- Quando o domínio clinicapsicomotricidade.com.br estiver no ar, troque os dois links abaixo -->
+          <a class="case__img" href="https://clinica-schneider-7hp.pages.dev/" target="_blank" rel="noopener" aria-label="Abrir o site da Clínica de Psicomotricidade">
+            <!-- Para usar o print real: troque o <div class="site"> por
+                 <img src="case-clinica.webp" alt="Site da Clínica de Psicomotricidade" loading="lazy" width="800" height="500"> -->
+            <div class="site site--b" aria-hidden="true">
+              <div class="site__bar"><i></i><i></i><i></i><span>clinicapsicomotricidade.com.br</span></div>
+              <div class="site__body">
+                <span class="site__kicker">Psicomotricidade</span>
+                <strong>Clínica<br>Schneider</strong>
+                <span class="site__btn"></span>
+              </div>
+            </div>
+          </a>
           <div class="case__body">
-            <span class="case__tag">[PREENCHER] Segmento</span>
-            <h3>[PREENCHER] Nome do cliente</h3>
+            <span class="case__tag">Saúde · Psicomotricidade</span>
+            <h3>Clínica Schneider</h3>
             <dl>
-              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: ferramenta de agendamento online.</dd></div>
-              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: X horas por semana economizadas.</dd></div>
+              <div><dt>O que foi feito</dt><dd>Site novo para a clínica apresentar seus atendimentos e receber contatos direto pelo WhatsApp.</dd></div>
+              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: agenda de avaliações mais cheia.</dd></div>
             </dl>
+            <a class="case__link" href="https://clinica-schneider-7hp.pages.dev/" target="_blank" rel="noopener">Ver site no ar <svg aria-hidden="true"><use href="#i-arrow"/></svg></a>
           </div>
         </article>
 
-        <!-- CASE 3 -->
-        <article class="card case glow reveal">
-          <div class="case__img">
-            <!-- [PREENCHER] Troque o conteúdo abaixo por: <img src="case-3.webp" alt="Projeto do cliente Z" loading="lazy" width="800" height="500"> -->
-            <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg><span class="fill">[PREENCHER] imagem do projeto</span></div>
-          </div>
-          <div class="case__body">
-            <span class="case__tag">[PREENCHER] Segmento</span>
-            <h3>[PREENCHER] Nome do cliente</h3>
-            <dl>
-              <div><dt>O que foi feito</dt><dd>[PREENCHER] Ex.: Google Meu Negócio e redes organizadas.</dd></div>
-              <div class="case__result"><dt>Resultado</dt><dd>[PREENCHER] Ex.: 1º lugar no Google para "X em Curitiba".</dd></div>
-            </dl>
+        <!-- PRÓXIMO CASE -->
+        <article class="card case case--next reveal">
+          <div class="case__next">
+            <div class="icon-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></div>
+            <h3>O próximo case pode ser o seu.</h3>
+            <p>Conta qual é a dor do seu negócio. A gente mostra como resolver.</p>
+            <a class="btn btn--primary js-wa" href="https://wa.me/5541996408701?text=Ol%C3%A1%2C%20Huboox%21%20Vi%20os%20cases%20no%20site%20e%20quero%20algo%20assim%20para%20o%20meu%20neg%C3%B3cio." data-msg="Olá, Huboox! Vi os cases no site e quero algo assim para o meu negócio.">
+              <svg aria-hidden="true"><use href="#i-wa"/></svg>
+              Quero o meu
+              <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
+            </a>
           </div>
         </article>
 
@@ -763,7 +870,7 @@
         <div class="cta__left">
           <h2>Qual é a dor do seu negócio hoje?</h2>
           <p>Conta pra gente no WhatsApp. Em poucos minutos você sabe como resolver.</p>
-          <a class="btn btn--white js-wa" href="#contato" data-msg="Olá! Quero resolver uma dor do meu negócio. Podemos conversar?">
+          <a class="btn btn--white js-wa" href="https://wa.me/5541996408701?text=Ol%C3%A1%2C%20Huboox%21%20Hoje%20a%20maior%20dor%20do%20meu%20neg%C3%B3cio%20%C3%A9%3A%20" data-msg="Olá, Huboox! Hoje a maior dor do meu negócio é: ">
             <svg aria-hidden="true"><use href="#i-wa"/></svg>
             Falar no WhatsApp
             <svg class="arrow" aria-hidden="true"><use href="#i-arrow"/></svg>
@@ -794,10 +901,13 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
           Curitiba/PR
         </span>
-        <!-- [PREENCHER] usuário do Instagram no href e no texto -->
-        <a href="https://instagram.com/[PREENCHER]" target="_blank" rel="noopener">
+        <a href="tel:+5541996408701">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+          (41) 99640-8701
+        </a>
+        <a href="https://www.instagram.com/huboox.digital/" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".6" fill="currentColor"/></svg>
-          @[PREENCHER]
+          @huboox.digital
         </a>
       </div>
     </div>
@@ -809,13 +919,13 @@
 </footer>
 
 <!-- Botão flutuante de WhatsApp (aparece só no mobile) -->
-<a class="wa-float js-wa" href="#contato" data-msg="Olá! Vim pelo site da Huboox e quero conversar sobre o meu negócio." aria-label="Falar no WhatsApp">
+<a class="wa-float js-wa" href="https://wa.me/5541996408701?text=Ol%C3%A1%2C%20Huboox%21%20Vim%20pelo%20site%20e%20gostaria%20de%20conversar." data-msg="Olá, Huboox! Vim pelo site e gostaria de conversar." aria-label="Falar no WhatsApp">
   <svg aria-hidden="true"><use href="#i-wa"/></svg>
 </a>
 
 <script>
-  // [PREENCHER] Número do WhatsApp com DDI + DDD, só números. Ex.: "5541999999999"
-  var WHATSAPP_NUMBER = "[PREENCHER]";
+  // Número do WhatsApp com DDI + DDD, só números. Para trocar, mude aqui (e nos href dos botões .js-wa).
+  var WHATSAPP_NUMBER = "5541996408701";
 
   (function () {
     document.body.classList.remove("no-js");
@@ -823,7 +933,7 @@
     // Monta os links do WhatsApp com a mensagem de cada botão
     var validNumber = /^\d{12,13}$/.test(WHATSAPP_NUMBER);
     document.querySelectorAll(".js-wa").forEach(function (a) {
-      if (!validNumber) return; // enquanto o número não for preenchido, os botões levam para #contato
+      if (!validNumber) return;
       var msg = a.getAttribute("data-msg") || "";
       a.href = "https://wa.me/" + WHATSAPP_NUMBER + (msg ? "?text=" + encodeURIComponent(msg) : "");
       a.target = "_blank";
@@ -831,6 +941,29 @@
     });
 
     document.getElementById("ano").textContent = new Date().getFullYear();
+
+    // Menu sanduíche (mobile)
+    var headerEl = document.querySelector(".header"), menuBtn = document.querySelector(".menu-btn");
+    function setMenu(open) {
+      headerEl.classList.toggle("is-open", open);
+      menuBtn.setAttribute("aria-expanded", open);
+      menuBtn.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+    }
+    menuBtn.addEventListener("click", function () { setMenu(!headerEl.classList.contains("is-open")); });
+    document.querySelectorAll(".nav a").forEach(function (l) { l.addEventListener("click", function () { setMenu(false); }); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") setMenu(false); });
+    document.addEventListener("click", function (e) { if (!headerEl.contains(e.target)) setMenu(false); });
+
+    // Botão flutuante some quando a chamada final ou o rodapé estão na tela
+    var waFloat = document.querySelector(".wa-float");
+    if ("IntersectionObserver" in window) {
+      var visible = new Set();
+      var fio = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) { e.isIntersecting ? visible.add(e.target) : visible.delete(e.target); });
+        waFloat.classList.toggle("is-hidden", visible.size > 0);
+      });
+      [document.querySelector("#contato .cta"), document.querySelector(".footer")].forEach(function (el) { if (el) fio.observe(el); });
+    }
 
     var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     var wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -855,12 +988,12 @@
       (async function loop() {
         await wait(3800);
         while (true) {
-          var cur = typed.textContent;
-          for (var n = cur.length; n >= 0; n--) { typed.textContent = cur.slice(0, n); await wait(28); }
+          var cur = typed.dataset.text;
+          for (var n = cur.length; n >= 0; n--) { typed.dataset.text = cur.slice(0, n); await wait(28); }
           i = (i + 1) % phrases.length;
           var next = phrases[i];
           await wait(250);
-          for (var k = 1; k <= next.length; k++) { typed.textContent = next.slice(0, k); await wait(55 + Math.random() * 45); }
+          for (var k = 1; k <= next.length; k++) { typed.dataset.text = next.slice(0, k); await wait(55 + Math.random() * 45); }
           await wait(i === 0 ? 5200 : 2000); // pausa maior na frase principal
         }
       })();
