@@ -38,3 +38,4 @@ Resumo do fluxo:
 ## Apps
 
 - [`apps/fatura-dashboard`](apps/fatura-dashboard): dashboard mensal da fatura do cartão (Nubank ativo, Banco do Brasil em breve), com categorias editáveis que viram regras para os meses seguintes, filtros, parcelas e histórico. Site estático (dados no navegador), pronto para a Vercel. Local: `cd apps/fatura-dashboard && npm start`.
+- [`apps/carteira-ia`](apps/carteira-ia): lê os PDFs mensais de carteiras recomendadas (ações, FIIs, internacional) com o Gemini, revisa cada ativo com pesquisa na web, compara com a sua carteira e calcula onde colocar o aporte. Site estático, pronto para a Vercel. Local: `cd apps/carteira-ia && npm start`.

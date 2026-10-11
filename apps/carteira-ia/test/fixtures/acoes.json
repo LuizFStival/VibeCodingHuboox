@@ -1,0 +1,15 @@
+{
+  "provider": "Casa Exemplo",
+  "title": "Carteira Recomendada de Ações",
+  "summary": "Relatório fictício usado nos testes.",
+  "macroHighlights": ["Selic em 13,75%"],
+  "changes": [{ "ticker": "EEEE3", "action": "Venda", "reason": "Tese não se confirmou." }],
+  "assets": [
+    { "ticker": "AAAA3", "name": "Empresa A", "segment": "Financeiro", "allocationPct": 40, "dividendYieldPct": 6.5, "price": "R$ 50,00", "ceilingPrice": 60, "recommendation": "COMPRAR" },
+    { "ticker": "BBBB3", "name": "Empresa B", "segment": "Energia", "allocationPct": 20, "dividendYieldPct": 10, "price": 12, "ceilingPrice": 11, "recommendation": "AGUARDAR" },
+    { "ticker": "CCCC3", "name": "Empresa C", "segment": "Mineração", "allocationPct": 20, "price": 70, "ceilingPrice": 90, "recommendation": "COMPRAR" },
+    { "ticker": "DDDD3", "name": "Empresa D", "segment": "Petróleo", "allocationPct": 20, "price": 30, "ceilingPrice": 40, "recommendation": "COMPRAR" },
+    { "ticker": "EEEE3", "name": "Empresa E", "segment": "Celulose", "allocationPct": 5, "price": 40, "ceilingPrice": 55, "recommendation": "VENDER" }
+  ],
+  "performance": { "period": "01/2022 a 10/2026", "items": [{ "name": "Carteira", "returnPct": 110.5 }, { "name": "IBOV", "returnPct": 80.8 }] }
+}

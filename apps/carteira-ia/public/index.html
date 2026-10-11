@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Carteira IA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f7a5a'/%3E%3Cpath d='M7 22l6-6 4 4 8-9' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Carteira IA</h1>
+        <p class="muted small">Carteiras recomendadas, revisadas pela IA e aplicadas ao seu aporte</p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <label class="month-picker">
+        <span class="small muted">Mês</span>
+        <select id="monthSelect" aria-label="Selecionar mês"></select>
+      </label>
+      <button id="uploadBtn" class="btn primary" type="button">Subir relatórios (PDF)</button>
+      <input id="fileInput" type="file" accept=".pdf,application/pdf,.json,application/json" multiple hidden>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="reports" aria-selected="true">1 · Carteiras</button>
+    <button role="tab" data-tab="analysis">2 · Análise IA</button>
+    <button role="tab" data-tab="mine">3 · Minha carteira</button>
+    <button role="tab" data-tab="aporte">4 · Aporte</button>
+    <button role="tab" data-tab="settings">Configurações</button>
+  </nav>
+
+  <div id="jobs" class="jobs" aria-live="polite" hidden></div>
+
+  <main id="app">
+    <section id="tab-reports" class="tab-panel"></section>
+    <section id="tab-analysis" class="tab-panel" hidden></section>
+    <section id="tab-mine" class="tab-panel" hidden></section>
+    <section id="tab-aporte" class="tab-panel" hidden></section>
+    <section id="tab-settings" class="tab-panel" hidden></section>
+  </main>
+
+  <dialog id="uploadDialog">
+    <form method="dialog" class="dialog-body">
+      <h2>Importar relatórios</h2>
+      <p class="muted small">Confira o tipo de cada carteira e o mês de referência (vêm do nome do arquivo). Reenviar o relatório de um mês já importado substitui os dados dele.</p>
+      <div id="uploadList" class="upload-list"></div>
+      <p id="uploadKeyNotice" class="notice" hidden>Para ler PDFs é preciso a chave da API do Gemini — configure em <b>Configurações</b>. Arquivos <code>.json</code> importam sem chave.</p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn" type="submit">Cancelar</button>
+        <button id="uploadConfirm" value="ok" class="btn primary" type="submit">Ler com IA</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="textDialog">
+    <form method="dialog" class="dialog-body">
+      <h2 id="textDialogTitle"></h2>
+      <p id="textDialogHint" class="muted small"></p>
+      <textarea id="textDialogInput" rows="14" spellcheck="false"></textarea>
+      <label id="textDialogReplaceWrap" class="check" hidden><input id="textDialogReplace" type="checkbox"> Substituir as posições atuais</label>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn" type="submit">Cancelar</button>
+        <button value="ok" class="btn primary" type="submit">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

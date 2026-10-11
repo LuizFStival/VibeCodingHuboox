@@ -1,0 +1,14 @@
+{
+  "name": "carteira-ia",
+  "version": "1.0.0",
+  "description": "Lê PDFs de carteiras recomendadas (ações, FIIs, internacional) com o Gemini, revisa com pesquisa na web, compara com a sua carteira e distribui o aporte.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}

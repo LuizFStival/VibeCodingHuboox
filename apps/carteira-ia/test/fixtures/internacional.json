@@ -1,0 +1,10 @@
+{
+  "type": "internacional",
+  "month": "2026-10",
+  "provider": "Casa Exemplo",
+  "summary": "Carteira internacional fictícia.",
+  "assets": [
+    { "ticker": "US:ETFA", "name": "ETF A", "segment": "ETF", "allocationPct": 60, "price": 100, "ceilingPrice": 120, "recommendation": "COMPRAR" },
+    { "ticker": "STKB", "name": "Stock B", "segment": "Stock", "allocationPct": 40, "price": 50, "ceilingPrice": 70, "recommendation": "COMPRAR" }
+  ]
+}
