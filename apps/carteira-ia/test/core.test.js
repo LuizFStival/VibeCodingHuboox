@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { detectMonth, detectType, normalizeReport, parseNumber, upside, reportStats } from '../public/core/report.js';
 import { parseJsonLoose, createGemini } from '../public/core/gemini.js';
+import { createService as createSvc } from '../public/core/service.js';
 import { normalizeAnalysis } from '../public/core/prompts.js';
 import { allocate, planAporte, comparePortfolio, classifyTicker } from '../public/core/portfolio.js';
 import { createService } from '../public/core/service.js';
@@ -61,7 +62,7 @@ test('cliente Gemini monta a requisição e lê fontes', async () => {
       json: async () => ({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, groundingMetadata: { groundingChunks: [{ web: { uri: 'https://ex.com/a', title: 'A' } }, { web: { uri: 'javascript:alert(1)' } }] } }] }),
     };
   };
-  const g = createGemini({ apiKey: 'k', model: 'gemini-2.5-flash', fetch: fakeFetch });
+  const g = createGemini({ apiKey: 'k', model: 'gemini-2.5-flash', fetch: fakeFetch, minIntervalMs: 0 });
   const res = await g.generate({ parts: [{ text: 'oi' }], search: true, schema: { type: 'OBJECT' } });
   assert.match(sent.url, /models\/gemini-2\.5-flash:generateContent$/);
   assert.equal(sent.init.headers['x-goog-api-key'], 'k');
@@ -70,8 +71,7 @@ test('cliente Gemini monta a requisição e lê fontes', async () => {
   assert.deepEqual(res.json(), { ok: true });
   assert.deepEqual(res.sources, [{ uri: 'https://ex.com/a', title: 'A' }]);
 
-  const bad = createGemini({ apiKey: 'k', fetch: async () => ({ ok: false, status: 429, json: async () => ({ error: { message: 'quota' } }) }) });
-  await assert.rejects(bad.generate({ parts: [{ text: 'x' }] }), /Limite de uso/);
+  assert.equal(res.searched, true);
   assert.throws(() => createGemini({ apiKey: '' }), /chave/);
 });
 
@@ -175,4 +175,76 @@ test('serviço: extrai com Gemini fake, analisa em lotes, importa carteira e pla
   store.apiKey = 'segredo';
   const svc2 = createService(store);
   assert.ok(!svc2.exportBackup().includes('segredo'));
+});
+
+// ---------------------------------------------------------------- robustez da API
+
+const okBody = (text, grounding) => ({ ok: true, status: 200, json: async () => ({ candidates: [{ content: { parts: [{ text }] }, groundingMetadata: grounding }] }) });
+const errBody = (status, error) => ({ ok: false, status, json: async () => ({ error }) });
+const rateErr = { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded. Please retry in 7.2s.', details: [
+  { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier' }] },
+  { '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '7s' }] };
+const dailyErr = { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded', details: [
+  { '@type': 'type.googleapis.com/google.rpc.QuotaFailure', violations: [{ quotaId: 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' }] }] };
+
+test('429 por minuto: espera o retryDelay da API e tenta de novo', async () => {
+  const waits = []; const retries = [];
+  let n = 0;
+  const g = createGemini({ apiKey: 'k', minIntervalMs: 0, sleep: async (ms) => { waits.push(ms); }, fetch: async () => (++n < 3 ? errBody(429, rateErr) : okBody('{"ok":1}')) });
+  const res = await g.generate({ parts: [{ text: 'x' }], onRetry: (m) => retries.push(m) });
+  assert.deepEqual(res.json(), { ok: 1 });
+  assert.equal(n, 3);
+  assert.deepEqual(waits, [7500, 7500]);
+  assert.match(retries[0], /por minuto.*8 s/);
+});
+
+test('cota diária, modelo inexistente e erro 5xx', async () => {
+  const sleep = async () => {};
+  let calls = 0;
+  const daily = createGemini({ apiKey: 'k', minIntervalMs: 0, sleep, fetch: async () => { calls++; return errBody(429, dailyErr); } });
+  await assert.rejects(daily.generate({ parts: [{ text: 'x' }] }), (e) => e.daily && /diária/.test(e.message));
+  assert.equal(calls, 1, 'não insiste quando a cota do dia acabou');
+  const missing = createGemini({ apiKey: 'k', model: 'gemini-velho', minIntervalMs: 0, sleep, fetch: async () => errBody(404, { message: 'models/gemini-velho is not found' }) });
+  await assert.rejects(missing.generate({ parts: [{ text: 'x' }] }), (e) => e.status === 404 && /gemini-velho/.test(e.message));
+  let k = 0;
+  const flaky = createGemini({ apiKey: 'k', minIntervalMs: 0, sleep, fetch: async () => (++k === 1 ? errBody(503, { message: 'overloaded' }) : okBody('ok')) });
+  assert.equal((await flaky.generate({ parts: [{ text: 'x' }] })).text, 'ok');
+});
+
+test('fila: uma requisição por vez, com intervalo mínimo', async () => {
+  let active = 0; let maxActive = 0;
+  const g = createGemini({ apiKey: 'k', minIntervalMs: 0, fetch: async () => { active++; maxActive = Math.max(maxActive, active); await new Promise((r) => setTimeout(r, 5)); active--; return okBody('ok'); } });
+  await Promise.all([1, 2, 3].map(() => g.generate({ parts: [{ text: 'x' }] })));
+  assert.equal(maxActive, 1);
+});
+
+test('análise: texto livre vira JSON, cota no meio salva progresso e dá para continuar', async () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  svc.importReportJson({ ...fixture('acoes.json'), type: 'acoes', month: '2026-10', assets: [...fixture('acoes.json').assets, { ticker: 'FFFF3', allocationPct: 5, recommendation: 'COMPRAR' }, { ticker: 'GGGG3', allocationPct: 5, recommendation: 'COMPRAR' }] });
+  const id = '2026-10:acoes';
+  let quotaLeft = 1;
+  const fake = {
+    model: 'fake',
+    async generate(req) {
+      if (req.schema) { // segunda chamada: estruturar o texto
+        const tickers = [...req.parts[0].text.matchAll(/\b([A-Z]{4}3)\b/g)].map((m) => m[1]);
+        return { json: () => ({ ativos: [...new Set(tickers)].map((t) => ({ ticker: t, veredito: 'CONCORDA', resumo: 'ok' })) }) };
+      }
+      if (quotaLeft-- <= 0) { const e = new Error('Cota diária esgotada'); e.daily = true; e.status = 429; throw e; }
+      const tickers = [...req.parts[0].text.matchAll(/"ticker":"([A-Z0-9]+)"/g)].map((m) => m[1]).filter((t) => t !== 'XXXX3');
+      return { text: `Análise em texto: ${tickers.join(', ')} parecem bons.`, sources: [{ uri: 'https://x', title: 'x' }], searched: true, queries: ['q'], json: () => { throw new Error('A IA não devolveu JSON.'); } };
+    },
+  };
+  const first = await svc.analyzeReport(fake, id);
+  assert.equal(Object.keys(first.items).length, 5, 'primeiro lote estruturado a partir do texto');
+  assert.match(first.fatal, /diária/);
+  assert.deepEqual(first.pending, ['FFFF3', 'GGGG3']);
+  assert.equal(svc.analysis(id).items.AAAA3.searched, true);
+  assert.deepEqual(svc.analysis(id).pending, ['FFFF3', 'GGGG3']);
+
+  quotaLeft = 1;
+  const second = await svc.analyzeReport(fake, id, { tickers: svc.analysis(id).pending });
+  assert.deepEqual(second.pending, []);
+  assert.equal(Object.keys(svc.analysis(id).items).length, 7, 'mantém o que já tinha + o que faltava');
+  assert.deepEqual(svc.analysis(id).pending, []);
 });

@@ -2,7 +2,7 @@
 // O cliente do Gemini é passado de fora (createGemini), o que permite testar com um fake.
 
 import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber } from './report.js';
-import { EXTRACTION_SCHEMA, extractionPrompt, analysisPrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
+import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, analysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
 
 const CHUNK = 5; // ativos por chamada de análise (respostas menores = menos cortes)
@@ -44,12 +44,13 @@ export function createService(store) {
     analysesFor,
 
     /** images: [{ mimeType, data(base64) }] das páginas do PDF. */
-    async extractReport(gemini, { images, type, month, filename, signal }) {
+    async extractReport(gemini, { images, type, month, filename, signal, onStatus }) {
       const res = await gemini.generate({
         parts: [{ text: extractionPrompt(type) }, ...images.map((img) => ({ inlineData: img }))],
         schema: EXTRACTION_SCHEMA,
         temperature: 0,
         signal,
+        onRetry: onStatus,
       });
       const normalized = normalizeReport(res.json(), { type, month });
       return { ...saveReport(normalized, { filename }), report: normalized };
@@ -73,37 +74,77 @@ export function createService(store) {
       });
     },
 
-    /** Analisa um relatório com pesquisa na web, em lotes. onProgress(feitos, total). */
-    async analyzeReport(gemini, id, { tickers, onProgress, signal } = {}) {
+    /**
+     * Analisa um relatório com pesquisa na web, em lotes de CHUNK ativos.
+     * Salva o progresso a cada lote: se a cota acabar no meio, o que já veio fica,
+     * e `pending` guarda os tickers que faltam para "Continuar de onde parou".
+     * onProgress(feitos, total, tickersDoLote) · onStatus(mensagem) para esperas/novas tentativas.
+     */
+    async analyzeReport(gemini, id, { tickers, onProgress, onStatus, signal } = {}) {
       const report = this.report(id);
       if (!report) throw new Error('Relatório não encontrado.');
       const assets = report.assets.filter((a) => !tickers || tickers.includes(a.ticker));
-      const result = { at: new Date().toISOString(), model: gemini.model, overview: '', items: {}, errors: [] };
-      for (let i = 0; i < assets.length; i += CHUNK) {
-        const chunk = assets.slice(i, i + CHUNK);
-        onProgress?.(i, assets.length, chunk.map((a) => a.ticker));
+      const result = { at: new Date().toISOString(), model: gemini.model, overview: '', items: {}, errors: [], fatal: null, searched: 0 };
+
+      const ask = async (chunk) => {
+        const wanted = chunk.map((a) => a.ticker);
+        const parts = [{ text: analysisPrompt(report, chunk, todayISO()) }];
+        let res;
         try {
-          const res = await gemini.generate({ parts: [{ text: analysisPrompt(report, chunk, todayISO()) }], search: true, temperature: 0.3, signal });
-          const norm = normalizeAnalysis(res.json(), chunk.map((a) => a.ticker), res.sources);
-          Object.assign(result.items, norm.items);
-          if (!result.overview && norm.overview) result.overview = norm.overview;
-          const missing = chunk.filter((a) => !norm.items[a.ticker]).map((a) => a.ticker);
-          if (missing.length) result.errors.push(`Sem resposta para ${missing.join(', ')}.`);
+          res = await gemini.generate({ parts, search: true, temperature: 0.3, signal, onRetry: onStatus });
         } catch (e) {
-          if (e.name === 'AbortError') throw e;
-          result.errors.push(`${chunk.map((a) => a.ticker).join(', ')}: ${e.message}`);
-          if (e.status === 401) break;
+          if (!e.searchUnsupported) throw e;
+          result.errors.push(`${e.message} — análise feita sem pesquisa na web.`);
+          res = await gemini.generate({ parts, schema: ANALYSIS_SCHEMA, temperature: 0.3, signal, onRetry: onStatus });
         }
-      }
-      onProgress?.(assets.length, assets.length, []);
-      store.update((data) => {
+        let raw;
+        try {
+          raw = res.json();
+        } catch {
+          // Com a pesquisa ligada o modelo às vezes responde em texto: pede para estruturar.
+          onStatus?.(`Organizando a resposta de ${wanted.join(', ')}…`);
+          raw = (await gemini.generate({ parts: [{ text: structurePrompt(res.text, wanted) }], schema: ANALYSIS_SCHEMA, temperature: 0, signal, onRetry: onStatus })).json();
+        }
+        const norm = normalizeAnalysis(raw, wanted, res.sources);
+        for (const it of Object.values(norm.items)) { it.searched = Boolean(res.searched); it.queries = res.queries ?? []; }
+        if (res.searched) result.searched += Object.keys(norm.items).length;
+        return norm;
+      };
+
+      const persist = (pending) => store.update((data) => {
         const prev = data.analyses[id];
         data.analyses[id] = {
           at: result.at, model: result.model,
           overview: result.overview || prev?.overview || '',
           items: { ...(prev?.items ?? {}), ...result.items },
+          errors: result.errors.slice(0, 20),
+          pending,
         };
       });
+
+      const pendingOf = () => assets.filter((a) => !result.items[a.ticker]).map((a) => a.ticker);
+      for (let i = 0; i < assets.length; i += CHUNK) {
+        const chunk = assets.slice(i, i + CHUNK);
+        onProgress?.(i, assets.length, chunk.map((a) => a.ticker));
+        try {
+          const norm = await ask(chunk);
+          Object.assign(result.items, norm.items);
+          if (!result.overview && norm.overview) result.overview = norm.overview;
+          const missing = chunk.filter((a) => !norm.items[a.ticker]).map((a) => a.ticker);
+          if (missing.length) result.errors.push(`A IA não respondeu sobre ${missing.join(', ')}.`);
+        } catch (e) {
+          if (e.name === 'AbortError') throw e;
+          const msg = `${chunk.map((a) => a.ticker).join(', ')}: ${e.message}`;
+          result.errors.push(e.raw && e.raw !== e.message ? `${msg} [${e.raw.slice(0, 200)}]` : msg);
+          // Sem chance de dar certo nos próximos lotes: para e avisa.
+          if (e.daily || e.status === 401 || e.status === 404) { result.fatal = e.message; break; }
+        }
+        persist(pendingOf());
+      }
+      const pending = pendingOf();
+      persist(pending);
+      result.pending = pending;
+      onProgress?.(assets.length - pending.length, assets.length, []);
       return result;
     },
 
@@ -162,8 +203,9 @@ export function createService(store) {
     plan(month, amount) {
       return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: d().settings });
     },
-    async reviewPlan(gemini, month, plan, { signal } = {}) {
+    async reviewPlan(gemini, month, plan, { signal, onStatus } = {}) {
       const res = await gemini.generate({
+        onRetry: onStatus,
         parts: [{ text: aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() }) }],
         search: true, temperature: 0.4, signal,
       });

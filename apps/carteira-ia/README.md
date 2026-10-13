@@ -31,6 +31,18 @@ Crie uma chave gratuita em [aistudio.google.com/apikey](https://aistudio.google.
 
 Cada mês fica separado (seletor no topo), o que mantém o histórico de relatórios.
 
+## Limites da API e erros
+
+O plano gratuito do Gemini tem limites baixos de requisições por minuto e por dia, e a análise faz cerca de uma chamada a cada 5 ativos. Para não estourar:
+
+- as chamadas saem **uma por vez**, com intervalo mínimo entre elas;
+- se a API responder **429 (limite por minuto)** ou instabilidade (5xx), o app espera o tempo que a própria API indica e tenta de novo (até 4 vezes), mostrando a espera na barra de progresso;
+- se a **cota diária** acabar, a análise para na hora (não adianta insistir), guarda o que já veio e mostra **Continuar de onde parou** no cartão da carteira;
+- se o modelo responder em texto em vez de JSON, uma segunda chamada (sem pesquisa) organiza o texto;
+- cada ativo indica se a resposta veio **com ou sem pesquisa na web**.
+
+Em **Configurações** há três testes: conexão, pesquisa na web (Google Search) e a lista dos modelos disponíveis para a sua chave. O erro completo da API aparece ali e no cartão da análise.
+
 ## Estrutura
 
 ```

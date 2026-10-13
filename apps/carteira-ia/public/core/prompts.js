@@ -111,6 +111,40 @@ export function analysisPrompt(report, assets, today) {
   ].filter(Boolean).join('\n');
 }
 
+// Mesmo formato do analysisPrompt, como schema — usado quando a resposta com pesquisa
+// vem em texto livre e precisa ser estruturada numa segunda chamada (sem pesquisa).
+export const ANALYSIS_SCHEMA = S('OBJECT', {
+  properties: {
+    visaoGeral: S('STRING'),
+    ativos: S('ARRAY', {
+      items: S('OBJECT', {
+        properties: {
+          ticker: S('STRING'),
+          veredito: S('STRING', { enum: ['CONCORDA', 'PARCIAL', 'DISCORDA'] }),
+          recomendacaoIA: S('STRING', { enum: ['COMPRAR', 'AGUARDAR', 'MANTER', 'VENDER'] }),
+          precoAtual: S('NUMBER', { nullable: true }),
+          resumo: S('STRING'),
+          fundamentos: S('ARRAY', { items: S('STRING') }),
+          noticias: S('ARRAY', { items: S('OBJECT', { properties: { titulo: S('STRING'), data: S('STRING'), impacto: S('STRING', { enum: ['positivo', 'negativo', 'neutro'] }) }, required: ['titulo'] }) }),
+          riscos: S('ARRAY', { items: S('STRING') }),
+          confianca: S('STRING', { enum: ['alta', 'media', 'baixa'] }),
+        },
+        required: ['ticker', 'veredito', 'resumo'],
+      }),
+    }),
+  },
+  required: ['ativos'],
+});
+
+export function structurePrompt(text, tickers) {
+  return [
+    `Abaixo está uma análise de investimentos sobre ${tickers.join(', ')}. Converta-a para o formato JSON pedido, sem inventar nada:`,
+    'use apenas informações do texto; se faltar algo, deixe a lista vazia ou null. Inclua um item para cada ticker citado.',
+    '---',
+    String(text).slice(0, 30000),
+  ].join('\n');
+}
+
 const str = (v, max = 600) => (v === null || v === undefined ? '' : String(v).trim().slice(0, max));
 const arr = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
 

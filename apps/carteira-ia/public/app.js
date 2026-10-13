@@ -24,9 +24,12 @@ const state = {
   type: null,           // carteira aberta na aba 1
   expanded: new Set(),  // linhas abertas na tabela
   anFilter: 'all',
+  anSkip: new Set(),    // carteiras desmarcadas na aba de análise
   aporte: 1000,
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
   busy: false,
+  diag: null,           // resultado do último teste em Configurações
+  models: null,         // modelos disponíveis para a chave (listModels)
 };
 
 // ---------- utilidades
@@ -268,24 +271,32 @@ function editReport(r) {
 }
 
 // ---------- 2 · Análise IA
-async function runAnalysis(ids) {
+/** ids: relatórios a analisar. only: { [id]: tickers } para analisar só alguns (continuar de onde parou). */
+async function runAnalysis(ids, only = {}) {
   if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); setTab('settings'); return; }
   if (state.busy) { toast('Já existe uma análise em andamento.'); return; }
+  if (!ids.length) { toast('Selecione ao menos uma carteira.'); return; }
   state.busy = true;
   if (state.tab !== 'analysis') setTab('analysis'); else render();
   const g = gemini();
   try {
     for (const id of ids) {
       const r = svc.report(id);
-      const j = job(`Analisando ${ASSET_TYPES[r.type].label}…`);
+      const name = ASSET_TYPES[r.type].label;
+      const j = job(`${name}: preparando…`);
+      let base = '';
       try {
         const res = await svc.analyzeReport(g, id, {
-          onProgress: (done, total, tickers) => j.update(tickers.length ? `${ASSET_TYPES[r.type].label}: pesquisando ${tickers.join(', ')} (${done}/${total})` : `${ASSET_TYPES[r.type].label}: concluído`, total ? done / total : 1),
+          tickers: only[id],
+          onProgress: (done, total, tickers) => { base = tickers.length ? `${name}: pesquisando ${tickers.join(', ')} (${done}/${total})` : `${name}: concluído`; j.update(base, total ? done / total : 1); },
+          onStatus: (msg) => j.update(`${base} — ${msg}`),
         });
-        if (res.errors.length) j.fail(`${ASSET_TYPES[r.type].label}: ${Object.keys(res.items).length} ativos analisados. Problemas: ${res.errors.join(' | ')}`);
-        else j.done(`${ASSET_TYPES[r.type].label}: ${Object.keys(res.items).length} ativos analisados.`);
+        const n = Object.keys(res.items).length;
+        if (res.fatal) { j.fail(`${name}: ${res.fatal}`); render(); break; }
+        if (res.pending.length || res.errors.length) j.fail(`${name}: ${n} analisados, ${res.pending.length} faltando. Detalhes no cartão de ${name}.`);
+        else j.done(`${name}: ${n} ativos analisados${res.searched < n ? ` (${n - res.searched} sem pesquisa na web)` : ''}.`);
       } catch (e) {
-        j.fail(`${ASSET_TYPES[r.type].label}: ${e.message}`);
+        j.fail(`${name}: ${e.message}`);
       }
       render();
     }
@@ -298,7 +309,7 @@ async function runAnalysis(ids) {
 function renderAnalysis() {
   if (!state.month) return emptyState();
   const reports = svc.reportsFor(state.month);
-  const selected = new Set(reports.map((r) => r.id));
+  const selected = reports.filter((r) => !state.anSkip.has(r.id)).map((r) => r.id);
   const calls = reports.reduce((s, r) => s + Math.ceil(r.assets.length / 5), 0);
 
   const controls = card('Revisar as recomendações com o Gemini', null,
@@ -306,11 +317,11 @@ function renderAnalysis() {
       'A IA pesquisa na web (Google Search) notícias, resultados (DRE), indicadores e fatos relevantes de cada ativo e diz se concorda com a recomendação do relatório. ',
       'Ações: DRE, margens, ROE, endividamento. FIIs: P/VP, DY, vacância, inadimplência, emissões. Internacional: resultados trimestrais, ETFs, juros e câmbio.'),
     h('div', { class: 'row' },
-      reports.map((r) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: true, onchange: (e) => { e.target.checked ? selected.add(r.id) : selected.delete(r.id); } }),
+      reports.map((r) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !state.anSkip.has(r.id), onchange: (e) => { e.target.checked ? state.anSkip.delete(r.id) : state.anSkip.add(r.id); render(); } }),
         `${ASSET_TYPES[r.type].label} (${r.assets.length})`)),
       h('span', { class: 'spacer' }),
-      h('button', { class: 'btn primary', type: 'button', disabled: state.busy || !reports.length, onclick: () => runAnalysis([...selected]) }, state.busy ? 'Analisando…' : 'Analisar selecionadas')),
-    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Cerca de ${calls} chamadas à API (5 ativos por chamada). Pode levar alguns minutos.`),
+      h('button', { class: 'btn primary', type: 'button', disabled: state.busy || !reports.length, onclick: () => runAnalysis(selected) }, state.busy ? 'Analisando…' : 'Analisar selecionadas')),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Cerca de ${calls} chamadas à API (5 ativos por chamada), uma por vez para respeitar o limite da sua chave. Pode levar alguns minutos — se a cota acabar no meio, o que já veio fica salvo e dá para continuar depois.`),
     hasKey() ? null : h('p', { class: 'notice', style: { 'margin-top': '8px' } }, 'Configure a chave da API do Gemini em Configurações.'));
 
   const filter = h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Mostrar:'),
@@ -329,6 +340,10 @@ function renderAnalysis() {
         h('h2', {}, h('span', { class: `dot type-${r.type}` }), ASSET_TYPES[r.type].label),
         h('span', { class: 'muted small' }, `${new Date(an.at).toLocaleString('pt-BR')} · ${an.model} · `,
           `${counts.CONCORDA} concorda · ${counts.PARCIAL} em parte · ${counts.DISCORDA} discorda`)),
+      an.pending?.length || an.errors?.length ? h('div', { class: 'notice', style: { 'margin-bottom': '12px' } },
+        an.pending?.length ? h('div', { class: 'row' }, h('b', {}, `Faltam ${an.pending.length} ativo(s): ${an.pending.join(', ')}`), h('span', { class: 'spacer' }),
+          h('button', { class: 'btn small primary', type: 'button', disabled: state.busy, onclick: () => runAnalysis([r.id], { [r.id]: an.pending }) }, 'Continuar de onde parou')) : null,
+        an.errors?.length ? h('details', { open: !items.length }, h('summary', { class: 'small' }, `${an.errors.length} problema(s) na última execução`), h('ul', { class: 'small' }, an.errors.map((e) => h('li', {}, e)))) : null) : null,
       an.overview ? h('p', { class: 'prose', style: { 'margin-bottom': '12px' } }, an.overview) : null,
       h('div', { class: 'an-grid' }, shown.map(({ a, ai }) => analysisCard(a, ai, r))),
       shown.length ? null : h('p', { class: 'muted small' }, 'Nenhum ativo neste filtro.'));
@@ -344,7 +359,8 @@ function analysisCard(a, ai, r) {
     h('div', { class: 'row' }, h('b', {}, a.ticker), h('span', { class: 'muted small' }, a.name), h('span', { class: 'spacer' }), verdictBadge(ai.verdict)),
     h('div', { class: 'row small' }, 'Relatório:', recBadge(a.rec), '→ IA:', recBadge(ai.aiRec),
       ai.price ? h('span', { class: 'muted' }, `preço ${money(ai.price, cur)}${a.ceiling ? ` · teto ${money(a.ceiling, cur)}` : ''}`) : null,
-      h('span', { class: 'muted' }, `confiança ${ai.confidence}`)),
+      h('span', { class: 'muted' }, `confiança ${ai.confidence}`),
+      ai.searched === false ? h('span', { class: 'badge rec-AGUARDAR', title: 'O modelo respondeu sem consultar o Google — pode estar desatualizado' }, 'sem pesquisa web') : null),
     ai.summary ? h('p', { class: 'prose' }, ai.summary) : null,
     list('Fundamentos', ai.fundamentals),
     list('Notícias', ai.news, (n) => h('li', { class: `imp-${n.impact}` }, n.title, n.date ? h('span', { class: 'muted small' }, ` (${n.date})`) : null)),
@@ -493,7 +509,7 @@ function renderAporte() {
       state.busy = true; render();
       const j = job('Pedindo a opinião da IA sobre o aporte…');
       try {
-        const res = await svc.reviewPlan(gemini(), state.month, plan);
+        const res = await svc.reviewPlan(gemini(), state.month, plan, { onStatus: (m) => j.update(m) });
         state.review = { key: planKey, ...res };
         j.done('Opinião recebida.');
       } catch (e) { j.fail(e.message); } finally { state.busy = false; render(); }
@@ -506,9 +522,36 @@ function renderAporte() {
 }
 
 // ---------- Configurações
+async function diagnose(kind) {
+  const model = svc.model || DEFAULT_MODEL;
+  state.busy = true;
+  state.diag = { ok: true, title: 'Testando…', lines: [] };
+  render();
+  try {
+    const g = gemini();
+    if (kind === 'models') {
+      state.models = await g.listModels();
+      state.diag = { ok: true, title: `${state.models.length} modelos Gemini disponíveis para a sua chave`, lines: [state.models.join(', '), state.models.includes(model) ? `O modelo atual (${model}) está na lista.` : `Atenção: o modelo atual (${model}) NÃO está na lista — escolha outro acima.`] };
+    } else if (kind === 'conn') {
+      const res = await g.generate({ parts: [{ text: 'Responda apenas: OK' }], temperature: 0, onRetry: (m) => { state.diag.lines = [m]; render(); } });
+      state.diag = { ok: true, title: `Conexão ok com ${model}`, lines: [`Resposta: ${res.text.trim().slice(0, 60)}`] };
+    } else {
+      const res = await g.generate({ parts: [{ text: 'Qual foi a última taxa Selic definida pelo Copom e em que data? Responda em uma frase.' }], search: true, onRetry: (m) => { state.diag.lines = [m]; render(); } });
+      state.diag = res.searched
+        ? { ok: true, title: `Pesquisa na web funcionando (${model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, `Buscas: ${res.queries.join(' · ') || '—'}`, `${res.sources.length} fonte(s).`] }
+        : { ok: false, title: `O modelo respondeu, mas sem pesquisar na web (${model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, 'Sem pesquisa, a análise usa só o conhecimento do modelo (pode estar desatualizado). Tente outro modelo.'] };
+    }
+  } catch (e) {
+    state.diag = { ok: false, title: e.message, lines: e.raw && e.raw !== e.message ? [`Resposta da API: ${e.raw}`] : [] };
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
 function renderSettings() {
   const keyInput = h('input', { type: 'password', placeholder: hasKey() ? '•••••••• (salva)' : 'Cole aqui a sua chave', autocomplete: 'off', style: { flex: '1 1 260px' } });
-  const modelSelect = h('select', {}, [...new Set([...MODEL_OPTIONS, svc.model || DEFAULT_MODEL])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
+  const modelSelect = h('select', {}, [...new Set([...(state.models ?? MODEL_OPTIONS), svc.model || DEFAULT_MODEL])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
   const customModel = h('input', { type: 'text', placeholder: 'ou digite outro modelo (ex.: gemini-3-pro-preview)', style: { flex: '1 1 260px' } });
 
   const api = card('API do Gemini', null,
@@ -520,14 +563,11 @@ function renderSettings() {
       h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Modelo:'), modelSelect, customModel,
         h('button', { class: 'btn', type: 'button', onclick: () => { svc.setModel(customModel.value.trim() || modelSelect.value); toast('Modelo salvo.'); render(); } }, 'Usar')),
       h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', disabled: !hasKey(), onclick: async (e) => {
-          e.target.disabled = true;
-          try {
-            const res = await gemini().generate({ parts: [{ text: 'Responda apenas: OK' }], temperature: 0 });
-            toast(`Conexão ok (${svc.model || DEFAULT_MODEL}): ${res.text.trim().slice(0, 40)}`);
-          } catch (err) { toast(err.message, true); } finally { e.target.disabled = false; }
-        } }, 'Testar conexão'),
-        h('span', { class: 'muted small' }, 'Flash é rápido e barato; Pro lê tabelas e raciocina melhor.'))));
+        h('button', { class: 'btn', type: 'button', disabled: !hasKey() || state.busy, onclick: () => diagnose('conn') }, 'Testar conexão'),
+        h('button', { class: 'btn', type: 'button', disabled: !hasKey() || state.busy, onclick: () => diagnose('search') }, 'Testar pesquisa na web'),
+        h('button', { class: 'btn', type: 'button', disabled: !hasKey() || state.busy, onclick: () => diagnose('models') }, 'Ver modelos da minha chave')),
+      state.diag ? h('div', { class: state.diag.ok ? 'notice ok' : 'notice' }, h('b', {}, state.diag.title), state.diag.lines.map((l) => h('div', { class: 'small' }, l))) : null,
+      h('p', { class: 'muted small' }, 'Flash é rápido e barato; Pro lê tabelas e raciocina melhor. No plano gratuito os limites por minuto e por dia são baixos — se a análise parar por cota, use "Continuar de onde parou" mais tarde, troque o modelo ou ative o faturamento no AI Studio.')));
 
   const data = card('Dados', null,
     h('div', { class: 'stack' },
@@ -606,7 +646,7 @@ $('#uploadDialog').addEventListener('close', async () => {
     try {
       const { images, pages, truncated } = await pdfToImages(p.file, { onPage: (n, total) => j.update(`${label}: convertendo página ${n}/${total}`, (n / total) * 0.3) });
       j.update(`${label}: a IA está lendo ${images.length} páginas${truncated ? ` (de ${pages})` : ''}…`, 0.4);
-      const res = await svc.extractReport(gemini(), { images, type: p.type, month: p.month, filename: p.file.name });
+      const res = await svc.extractReport(gemini(), { images, type: p.type, month: p.month, filename: p.file.name, onStatus: (m) => j.update(`${label}: ${m}`) });
       j.done(`${label}: ${res.report.assets.length} ativos extraídos${res.replaced ? ' (substituiu o anterior)' : ''}.`);
       lastMonth = p.month; lastType = p.type;
     } catch (e) {
