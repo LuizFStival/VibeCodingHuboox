@@ -4,7 +4,11 @@ Lê os PDFs mensais de carteiras recomendadas (Ações, FIIs e Internacional), o
 
 Site estático, igual ao `fatura-dashboard`: tudo roda no navegador, os dados ficam no `localStorage` e o Gemini é chamado direto do navegador com a **sua** chave.
 
-## Rodar localmente
+## Rodar no Windows sem instalar nada
+
+Dê dois cliques em **`Abrir Carteira IA (Windows).bat`**. Ele usa o PowerShell que já vem no Windows para abrir o app em http://localhost:3334 no navegador. Deixe a janela preta aberta enquanto usa e feche-a para parar.
+
+## Rodar localmente (com Node.js)
 
 Node.js 20+, sem dependências.
 
