@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   fractionalIntl: true,
   respectCeiling: true, // não compra acima do preço teto/justo do relatório
   maxOrders: 5,         // concentra o aporte nos N ativos mais abaixo do peso (0 = sem limite)
+  aporteAmount: 757.4,  // valor padrão do aporte do mês (editável, fica salvo)
 };
 
 /** ticker → { ticker, type, asset, analysis } a partir dos relatórios do mês. */
@@ -206,15 +207,39 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     }
   }
 
-  // 2b) concentra nos N ativos com maior valor ideal; o dinheiro dos outros vai para eles
+  // 2b) concentra em até N ativos, repartidos entre as classes pelo dinheiro de cada uma
+  //     (toda classe com fatia relevante fica com ao menos 1); o dinheiro dos ativos que
+  //     ficaram de fora vai para os escolhidos da MESMA classe, para não distorcer o alvo.
   const maxOrders = Number(settings.maxOrders) || 0;
   if (maxOrders > 0 && lines.length > maxOrders) {
-    lines.sort((a, b) => b.ideal - a.ideal);
-    const dropped = lines.splice(maxOrders);
-    const extra = dropped.reduce((s2, l) => s2 + l.ideal, 0);
-    const base = lines.reduce((s2, l) => s2 + l.ideal, 0);
-    for (const l of lines) l.ideal += base ? extra * (l.ideal / base) : extra / lines.length;
-    warnings.push(`Aporte concentrado em ${maxOrders} ativos (os mais abaixo do peso). Ficaram para os próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
+    const byClass = new Map();
+    for (const l of lines) { if (!byClass.has(l.type)) byClass.set(l.type, []); byClass.get(l.type).push(l); }
+    const classAmt = (t) => byClass.get(t).reduce((s2, l) => s2 + l.ideal, 0);
+    const relevant = [...byClass.keys()].filter((t) => classAmt(t) >= amount * 0.1 || byClass.size === 1)
+      .sort((a, b) => classAmt(b) - classAmt(a));
+    const quota = new Map(relevant.map((t) => [t, 1]));
+    let left = maxOrders - relevant.length;
+    while (left > 0) { // dá as vagas restantes a quem tem mais dinheiro por vaga
+      const t = relevant.filter((c) => quota.get(c) < byClass.get(c).length).sort((a, b) => classAmt(b) / quota.get(b) - classAmt(a) / quota.get(a))[0];
+      if (!t) break;
+      quota.set(t, quota.get(t) + 1); left--;
+    }
+    const kept = []; const dropped = [];
+    const sumIdeal = (ls) => ls.reduce((s2, l) => s2 + l.ideal, 0);
+    for (const [t, ls] of byClass) {
+      ls.sort((a, b) => b.ideal - a.ideal);
+      const keep = ls.slice(0, quota.get(t) ?? 0);
+      const drop = ls.slice(keep.length);
+      dropped.push(...drop);
+      const extra = sumIdeal(drop); const base = sumIdeal(keep);
+      for (const l of keep) l.ideal += base ? extra * (l.ideal / base) : extra / keep.length;
+      kept.push(...keep);
+    }
+    lines.length = 0; lines.push(...kept);
+    // Classe com fatia pequena (menos de 10%) não ganha vaga: o dinheiro dela vai para os escolhidos.
+    const lost = amount - sumIdeal(kept);
+    if (lost > 0.01) { const base = sumIdeal(kept); for (const l of kept) l.ideal += base ? lost * (l.ideal / base) : lost / kept.length; }
+    warnings.push(`Aporte concentrado em ${kept.length} ativos (os mais abaixo do peso em cada classe). Ficaram para os próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
   }
 
   // 3) cotas: arredonda para baixo e usa a sobra comprando cotas inteiras onde mais falta

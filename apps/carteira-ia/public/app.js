@@ -32,7 +32,6 @@ const state = {
   manualText: {},       // respostas coladas (modo manual), por relatório
   showPages: new Set(), // relatórios com a página original aberta
   manualRead: { type: 'acoes' }, // leitura de PDF pelo chat
-  aporte: 1000,
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
   busy: false,
   diag: null,           // resultado do último teste em Configurações
@@ -650,15 +649,35 @@ function pasteHoldings() {
 function renderAporte() {
   if (!state.month) return emptyState();
   const s = svc.settings();
-  const plan = svc.plan(state.month, state.aporte);
-  const planKey = JSON.stringify([state.month, state.aporte, s, plan.lines.map((l) => [l.ticker, l.qty])]);
+  const aporte = Number(s.aporteAmount ?? 757.4) || 0;
+  const plan = svc.plan(state.month, aporte);
+  const planKey = JSON.stringify([state.month, aporte, s, plan.lines.map((l) => [l.ticker, l.qty])]);
   if (state.review && state.review.key !== planKey) state.review = null;
 
   const setTarget = (t) => (e) => { svc.updateSettings({ targets: { [t]: Math.max(0, Number(e.target.value) || 0) / 100 } }); render(); };
   const sumTargets = TYPE_IDS.reduce((acc, t) => acc + (s.targets[t] ?? 0), 0);
+  // Perfis de alocação para escolher na hora; "como está hoje" mantém a divisão atual.
+  const cmpNow = svc.compare(state.month);
+  const nowTargets = cmpNow.total ? Object.fromEntries(TYPE_IDS.map((t) => [t, Math.round((cmpNow.classes.find((c) => c.type === t).pct) * 100) / 100])) : null;
+  const PRESETS = [
+    nowTargets ? ['Manter como está hoje', nowTargets] : null,
+    ['Equilibrada', { acoes: 0.4, fiis: 0.3, internacional: 0.3 }],
+    ['Mais Brasil', { acoes: 0.5, fiis: 0.3, internacional: 0.2 }],
+    ['Mais renda (FIIs)', { acoes: 0.35, fiis: 0.45, internacional: 0.2 }],
+    ['Mais exterior', { acoes: 0.35, fiis: 0.25, internacional: 0.4 }],
+  ].filter(Boolean);
+  const same = (a, b) => TYPE_IDS.every((t) => Math.abs((a[t] ?? 0) - (b[t] ?? 0)) < 0.005);
+  const presetRow = h('div', { class: 'stack', style: { gap: '6px', 'margin-bottom': '12px' } },
+    h('span', { class: 'muted small' }, 'Alvo por classe — escolha um perfil ou digite os seus %:'),
+    h('div', { class: 'row' }, PRESETS.map(([label, tg]) => h('button', {
+      class: `btn small${same(s.targets, tg) ? ' primary' : ''}`, type: 'button',
+      title: TYPE_IDS.map((t) => `${ASSET_TYPES[t].short} ${Math.round(tg[t] * 100)}%`).join(' · '),
+      onclick: () => { svc.updateSettings({ targets: tg }); render(); },
+    }, `${label} · ${TYPE_IDS.map((t) => Math.round(tg[t] * 100)).join('/')}`))));
   const form = card('Quanto você quer aportar?', null,
+    presetRow,
     h('div', { class: 'form-grid' },
-      h('label', { class: 'field' }, 'Valor do aporte (R$)', h('input', { class: 'input-money', type: 'number', min: 0, step: 50, value: String(state.aporte), onchange: (e) => { state.aporte = Math.max(0, Number(e.target.value) || 0); render(); } })),
+      h('label', { class: 'field' }, 'Valor do aporte (R$)', h('input', { id: 'aporteAmount', class: 'input-money', type: 'number', min: 0, step: 0.01, value: String(aporte), onchange: (e) => { svc.updateSettings({ aporteAmount: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } })),
       TYPE_IDS.map((t) => h('label', { class: 'field' }, `Alvo ${ASSET_TYPES[t].short} (%)`, h('input', { type: 'number', min: 0, max: 100, step: 5, value: String(Math.round((s.targets[t] ?? 0) * 100)), onchange: setTarget(t) }))),
       h('label', { class: 'field' }, 'Dólar (R$)', h('input', { type: 'number', min: 0, step: 0.01, value: String(s.usdBrl), onchange: (e) => { svc.updateSettings({ usdBrl: Number(e.target.value) || 0 }); render(); } }))),
     Math.abs(sumTargets - 1) > 0.001 ? h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Os alvos somam ${Math.round(sumTargets * 100)}% — são normalizados para 100%.`) : null,
@@ -692,7 +711,7 @@ function renderAporte() {
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
         h('td', { class: 'num' }, brl(l.amount)),
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
-      h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, state.aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
   const manualMode = (EMBEDDED && !claudeAI) || (s.analysisMode ?? 'manual') === 'manual';
   const askApi = async () => {

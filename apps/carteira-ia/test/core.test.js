@@ -451,3 +451,16 @@ test('veredito da IA sem pesquisa na web não bloqueia o aporte', () => {
   const web = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: true } }, settings: st });
   assert.ok(!web.lines.some((l) => l.ticker === 'CCCC3'));
 });
+
+test('concentração respeita as classes: cada classe com fatia relevante recebe', () => {
+  const r = [
+    normalizeReport({ assets: [1, 2, 3, 4].map((i) => ({ ticker: `ACA${i}3`.replace(/\d3$/, `${i}3`).slice(0, 4).padEnd(4, 'A') + '3', allocationPct: 25, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' })) }, { type: 'acoes', month: '2026-10' }),
+    normalizeReport({ assets: ['FIIA', 'FIIB', 'FIIC', 'FIID', 'FIIE', 'FIIF', 'FIIG', 'FIIH'].map((t) => ({ ticker: `${t}11`, allocationPct: 12.5, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' })) }, { type: 'fiis', month: '2026-10' }),
+  ];
+  const st = { targets: { acoes: 0.5, fiis: 0.5, internacional: 0 }, usdBrl: 5, respectAi: true, respectCeiling: true, maxOrders: 4 };
+  const plan = planAporte({ amount: 1000, holdings: [], reports: r, settings: st });
+  const fiis = plan.lines.filter((l) => l.type === 'fiis').reduce((a, l) => a + l.amount, 0);
+  const acoes = plan.lines.filter((l) => l.type === 'acoes').reduce((a, l) => a + l.amount, 0);
+  assert.equal(plan.lines.length, 4);
+  assert.ok(fiis > 400 && acoes > 400, `fiis ${fiis} acoes ${acoes}`);
+});
