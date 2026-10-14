@@ -15,6 +15,7 @@ export const emptyData = () => ({
   analyses: {},     // reportId → { at, model, overview, items: { ticker → análise } }
   holdings: [],     // { id, ticker, type, qty, avgPrice, price }
   snapshots: [],    // balanço mensal: { month, at, total, cost, byClass, byAsset }
+  notes: {},        // pareceres da IA por mês: { [mês]: { ranking|portfolio|plan: { text, by, at } } }
   settings: structuredClone(DEFAULT_SETTINGS),
   model: null,
 });
@@ -30,6 +31,7 @@ export function validateData(data) {
   if (!Array.isArray(data.reports) || !Array.isArray(data.holdings)) throw new Error('Backup inválido: faltam relatórios ou carteira');
   if (!data.analyses || typeof data.analyses !== 'object') throw new Error('Backup inválido: "analyses" ausente');
   if (!Array.isArray(data.snapshots)) data.snapshots = [];
+  if (!data.notes || typeof data.notes !== 'object') data.notes = {};
   data.settings = { ...structuredClone(DEFAULT_SETTINGS), ...(data.settings ?? {}) };
   data.settings.targets = { ...DEFAULT_SETTINGS.targets, ...(data.settings.targets ?? {}) };
   return data;

@@ -5,6 +5,8 @@ import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber } fro
 import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, manualExtractionPrompt, analysisPrompt, manualAnalysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
 import { parseJsonLoose } from './gemini.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
+import { buildRanking } from './ranking.js';
+import { rankingReviewPrompt, portfolioReviewPrompt, planReviewPrompt } from './prompts.js';
 
 const CHUNK = 5; // ativos por chamada de análise (respostas menores = menos cortes)
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -260,6 +262,29 @@ export function createService(store) {
       if (replace) store.update((data) => { data.holdings = []; });
       for (const r of rows) this.upsertHolding(r);
       return { count: rows.length, errors };
+    },
+
+    // ---------------- ranking e pareceres da IA (ranking do mês, carteira, plano de aporte)
+    ranking(month) { return buildRanking(reportsFor(month), analysesFor(month)); },
+    note: (month, kind) => d().notes?.[month]?.[kind] ?? null,
+    saveNote(month, kind, text, by) {
+      const clean = String(text ?? '').trim().slice(0, 20000);
+      if (!clean) throw new Error('Cole a resposta antes de salvar.');
+      store.update((data) => { data.notes ??= {}; data.notes[month] = { ...(data.notes[month] ?? {}), [kind]: { text: clean, by, at: new Date().toISOString() } }; });
+    },
+    /** kind: 'ranking' | 'portfolio' | 'plan'. web = versão para um chat que pesquisa. */
+    reviewPromptFor(kind, month, { web = false, plan } = {}) {
+      const ranking = this.ranking(month);
+      const today = todayISO();
+      if (kind === 'ranking') return rankingReviewPrompt({ month, ranking, today, web });
+      if (kind === 'portfolio') return portfolioReviewPrompt({ month, cmp: this.compare(month), ranking, today, web });
+      if (kind === 'plan') return planReviewPrompt({ plan, cmp: this.compare(month), ranking, today, web });
+      throw new Error(`Parecer desconhecido: ${kind}`);
+    },
+    async askReview(ai, kind, month, { plan, onStatus, signal } = {}) {
+      const res = await ai.generate({ parts: [{ text: this.reviewPromptFor(kind, month, { plan }) }], temperature: 0.4, signal, onRetry: onStatus });
+      this.saveNote(month, kind, res.text, ai.model);
+      return res.text;
     },
 
     // ---------------- balanço mensal (foto do patrimônio, para acompanhar a evolução)

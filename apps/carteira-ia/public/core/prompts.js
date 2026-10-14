@@ -3,6 +3,7 @@
 // exibido sempre como texto.
 
 import { ASSET_TYPES, normalizeRec, normalizeTicker, parseNumber, upside } from './report.js';
+import { rankingText, GROUPS } from './ranking.js';
 
 // ---------------------------------------------------------------- extração do PDF
 
@@ -257,5 +258,74 @@ export function aporteReviewPrompt({ plan, reports, analyses, today }) {
     'Pesquise rapidamente o momento atual de mercado e comente o plano em português, de forma direta:',
     '1) O plano faz sentido? 2) Algum ativo merece mais ou menos dinheiro agora e por quê? 3) Riscos de concentração ou de momento. 4) Ajustes concretos sugeridos (com valores).',
     'Use no máximo 250 palavras, em tópicos curtos. Lembre que não é recomendação formal de investimento.',
+  ].filter(Boolean).join('\n');
+}
+
+// ---------------------------------------------------------------- pareceres (ranking, carteira, plano)
+
+const brlTxt = (v) => `R$ ${Math.round(v).toLocaleString('pt-BR')}`;
+const webLine = (web) => (web
+  ? 'Antes de concluir, pesquise rapidamente na web para confirmar os pontos críticos (preço atual, fatos relevantes recentes).'
+  : 'Use os dados abaixo (já vieram de pesquisa na web feita hoje).');
+const close = 'Responda em português, em tópicos curtos e diretos, com no máximo 350 palavras. Não é recomendação formal de investimento.';
+
+export function rankingReviewPrompt({ month, ranking, today, web = false }) {
+  return [
+    `Hoje é ${today}. Você é um analista de investimentos revisando as carteiras recomendadas de ${month} (ações, FIIs e internacional) depois da pesquisa de cada ativo.`,
+    webLine(web),
+    'Ranking calculado (nota 0-100 = recomendação da casa + leitura da pesquisa + margem até o preço teto + DY):',
+    rankingText(ranking),
+    '',
+    'Escreva o parecer do mês:',
+    '1) As 5 melhores oportunidades agora e por quê.',
+    '2) Potenciais que valem acompanhar (o que falta para virar compra).',
+    '3) Ativos em risco ou para evitar, com o motivo.',
+    '4) Uma frase por classe (ações, FIIs, internacional) sobre o momento.',
+    close,
+  ].join('\n');
+}
+
+export function portfolioReviewPrompt({ month, cmp, ranking, today, web = false }) {
+  const byTicker = new Map(ranking.map((r) => [r.ticker, r]));
+  const rows = cmp.rows.map((r) => {
+    const rk = byTicker.get(r.ticker);
+    const res = r.cost ? `${(((r.value - r.cost) / r.cost) * 100).toFixed(1)}%` : '—';
+    return `${r.ticker} (${ASSET_TYPES[r.type].short}) ${brlTxt(r.value)} = ${((r.value / (cmp.total || 1)) * 100).toFixed(1)}% do patrimônio · resultado ${res} · ${rk ? `nota ${rk.score} (${GROUPS[rk.group].label}), casa ${rk.rec}${rk.an?.summary ? ` — ${rk.an.summary.slice(0, 160)}` : ''}` : 'fora das carteiras recomendadas do mês'}`;
+  });
+  const classes = cmp.classes.map((c) => `${c.label}: ${(c.pct * 100).toFixed(1)}% (alvo ${(c.target * 100).toFixed(0)}%)`).join(' · ');
+  return [
+    `Hoje é ${today}. Você é um analista de investimentos fazendo o diagnóstico da carteira de um investidor pessoa física, comparando com as carteiras recomendadas de ${month}.`,
+    webLine(web),
+    `Patrimônio investido: ${brlTxt(cmp.total)}. Por classe: ${classes}.`,
+    'Posições:',
+    rows.join('\n'),
+    '',
+    'Melhores oportunidades do mês (que o investidor pode ainda não ter):',
+    ranking.filter((r) => r.group === 'oportunidade').slice(0, 10).map((r) => `${r.ticker} nota ${r.score}`).join(', '),
+    '',
+    'Escreva o diagnóstico:',
+    '1) Saúde geral: diversificação, concentração (algum ativo ou classe pesado demais?).',
+    '2) Pontos fortes da carteira.',
+    '3) Posições fracas ou em risco e o que fazer (manter sem aportar, reduzir aos poucos, ou vender — lembre de IR/DARF e de que o investidor prefere não vender sem motivo forte).',
+    '4) O que falta, comparando com as carteiras recomendadas.',
+    '5) Prioridades para os próximos aportes.',
+    close,
+  ].join('\n');
+}
+
+export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
+  const byTicker = new Map(ranking.map((r) => [r.ticker, r]));
+  return [
+    `Hoje é ${today}. Você é um analista de investimentos revisando o plano de aporte do mês de um investidor pessoa física.`,
+    webLine(web),
+    `Patrimônio atual: ${brlTxt(cmp.total)}. Aporte: ${brlTxt(plan.amount)}.`,
+    `Classes (antes → depois → alvo): ${plan.classes.map((c) => `${c.label} ${(c.pctBefore * 100).toFixed(1)}% → ${(c.pctAfter * 100).toFixed(1)}% → ${(c.target * 100).toFixed(0)}%`).join(' · ')}`,
+    'Compras propostas:',
+    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker}: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
+    plan.warnings.length ? `Observações do cálculo:\n${plan.warnings.map((w) => `- ${w}`).join('\n')}` : '',
+    `Carteira atual: ${cmp.rows.map((r) => `${r.ticker} ${((r.value / (cmp.total || 1)) * 100).toFixed(1)}%`).join(', ')}`,
+    '',
+    'Revise o plano como um analista: 1) faz sentido? 2) trocaria algum ativo ou valor, e por quê? 3) riscos de concentração ou de momento; 4) versão final sugerida (ativo, quantidade, valor).',
+    close,
   ].filter(Boolean).join('\n');
 }

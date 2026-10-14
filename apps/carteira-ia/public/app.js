@@ -15,6 +15,7 @@ const FAST_PAGES = 8; // leitura rápida: tabela, resumo, mudanças e desempenho
 import { VERDICTS } from './core/prompts.js';
 import { createClaudeAI } from './core/claude-ai.js';
 import { createDbStorage } from './core/db-storage.js';
+import { GROUPS } from './core/ranking.js';
 
 // store/svc são criados no boot(): no painel, depois de carregar o banco do Claude.
 let store;
@@ -30,6 +31,9 @@ const state = {
   anFilter: 'all',
   anSkip: new Set(),    // carteiras desmarcadas na aba de análise
   manualText: {},       // respostas coladas (modo manual), por relatório
+  reviewPaste: {},      // pareceres colados do GPT, por tipo
+  proposedKey: null,    // parâmetros do último "Propor aporte"
+  importFlash: {},      // mensagem de sucesso da importação, por relatório
   showPages: new Set(), // relatórios com a página original aberta
   manualRead: { type: 'acoes' }, // leitura de PDF pelo chat
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
@@ -421,17 +425,37 @@ function manualRow(r) {
       h('button', { class: 'btn small primary', type: 'button', onclick: () => copy(false) }, missing && done ? `1 · Copiar pedido (${missing} que faltam)` : '1 · Copiar pedido'),
       done ? h('button', { class: 'btn small', type: 'button', onclick: () => copy(true), title: 'Pedir de novo todos os ativos' }, 'Refazer todos') : null,
       CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
+    state.importFlash[r.id] ? h('p', { class: 'notice ok' }, state.importFlash[r.id]) : null,
     paste,
     h('div', { class: 'row' },
       h('button', { class: 'btn small primary', type: 'button', onclick: () => {
         try {
           const res = svc.importManualAnalysis(r.id, paste.value);
           state.manualText[r.id] = '';
-          toast(`${ASSET_TYPES[r.type].label}: ${res.count} ativo(s) importados${res.pending.length ? `. Faltam ${res.pending.length} — copie o pedido de novo para pedir só eles.` : '.'}`);
+          state.importFlash[r.id] = `✓ ${res.count} ativo(s) importados${res.pending.length ? `. Faltam ${res.pending.length}: ${res.pending.join(', ')} — clique em Copiar pedido de novo para pedir só eles.` : ' — todos desta carteira analisados.'} Veja o ranking abaixo.`;
           render();
+          document.getElementById('ranking')?.scrollIntoView({ behavior: 'smooth' });
         } catch (e) { toast(e.message, true); }
       } }, '2 · Importar resposta'),
       h('span', { class: 'muted small' }, 'Se o chat cortar a resposta, importe o que veio e copie o pedido de novo: ele pede só os que faltam.')));
+}
+
+/** Ranking do mês: nota 0-100 por ativo, em 4 grupos. */
+function rankingCard() {
+  const ranking = svc.ranking(state.month);
+  const cls = { oportunidade: 'falta', potencial: '', aguardar: 'preco', risco: 'vender' };
+  return h('div', { class: 'card', id: 'ranking' },
+    h('div', { class: 'card-head' }, h('h2', {}, `Ranking de ${monthLong(state.month)}`),
+      h('span', { class: 'muted small' }, 'nota 0-100 = recomendação da casa + pesquisa da IA + margem até o teto + DY')),
+    h('div', { class: 'rank-groups' }, Object.entries(GROUPS).map(([g, info]) => {
+      const items = ranking.filter((r) => r.group === g);
+      return h('section', { class: `rank-group ${g}` },
+        h('h3', {}, `${info.label} (${items.length})`), h('p', { class: 'muted small' }, info.hint),
+        items.length ? h('ul', { class: 'alert-list' }, items.map((r) => h('li', { class: cls[g], title: r.parts.map((p) => `${p.pts > 0 ? '+' : ''}${p.pts} ${p.why}`).join('\n') + (r.an?.summary ? `\n\n${r.an.summary}` : '') },
+          h('div', { class: 'row' }, h('b', {}, r.ticker), h('span', { class: `dot type-${r.type}` }), h('span', { class: 'spacer' }), h('span', { class: 'score' }, String(r.score))),
+          h('div', { class: 'muted small' }, r.parts.filter((p) => Math.abs(p.pts) >= 3).sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts)).slice(0, 3).map((p) => p.why).join(' · '))))) : h('p', { class: 'muted small' }, '—'));
+    })),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Passe o mouse num ativo para ver a conta completa e o resumo da pesquisa.'));
 }
 
 function renderAnalysis() {
@@ -494,7 +518,12 @@ function renderAnalysis() {
       shown.length ? null : h('p', { class: 'muted small' }, 'Nenhum ativo neste filtro.'));
   });
 
-  return [controls, reports.some((r) => svc.analysis(r.id)) ? filter : null, ...sections];
+  const analyzed = reports.some((r) => svc.analysis(r.id));
+  return [controls,
+    analyzed ? rankingCard() : null,
+    analyzed ? aiReviewCard('ranking', { title: 'Parecer do mês', intro: 'A IA lê o ranking e as pesquisas e escreve a conclusão: melhores oportunidades, potenciais, riscos e o momento de cada classe.' }) : null,
+    analyzed ? h('h2', { style: { 'margin-top': '8px' } }, 'Análise de cada ativo') : null,
+    analyzed ? filter : null, ...sections];
 }
 
 function analysisCard(a, ai, r) {
@@ -603,7 +632,41 @@ function renderMine() {
     }))),
     h('div', { class: 'legend' }, TYPE_IDS.map((t) => h('span', { class: `fill-${t}` }, h('i'), ASSET_TYPES[t].short))));
 
-  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
+  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), diagnosisCard(cmp),
+    aiReviewCard('portfolio', { title: 'Análise da carteira pela IA', intro: 'A IA cruza a sua carteira com o ranking e as pesquisas do mês: concentração, pontos fortes, posições em risco, o que falta e as prioridades dos próximos aportes.' }),
+    balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
+}
+
+/** Diagnóstico: cada posição cruzada com o ranking do mês. */
+function diagnosisCard(cmp) {
+  const ranking = state.month ? svc.ranking(state.month) : [];
+  const byTicker = new Map(ranking.map((r) => [r.ticker, r]));
+  const rows = [...cmp.rows].sort((a, b) => b.value - a.value).map((r) => {
+    const rk = byTicker.get(r.ticker);
+    const share = cmp.total ? r.value / cmp.total : 0;
+    const cls = cmp.classes.find((c) => c.type === r.type);
+    const flags = [];
+    if (share > 0.2) flags.push(`concentração: ${pct(share)} do patrimônio num ativo só`);
+    else if (cls?.value && r.value / cls.value > 0.4) flags.push(`pesado na classe: ${pct(r.value / cls.value)} de ${ASSET_TYPES[r.type].short}`);
+    if (rk?.upside !== null && rk?.upside < 0) flags.push('preço acima do teto');
+    if (!rk) flags.push('fora das recomendadas do mês: mantido, sem aporte novo');
+    const status = !rk ? { label: 'Fora', cls: 'MANTER' } : rk.group === 'risco' ? { label: 'Em risco', cls: 'VENDER' } : rk.group === 'aguardar' ? { label: 'Aguardar', cls: 'AGUARDAR' } : { label: rk.group === 'oportunidade' ? 'Forte' : 'Bom', cls: 'COMPRAR' };
+    return { r, rk, share, flags, status };
+  });
+  const risky = rows.filter((x) => x.status.label === 'Em risco');
+  return card('Diagnóstico da carteira', h('span', { class: 'muted small' }, `${rows.length} posições · ${risky.length} em risco`),
+    h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['Ativo', 'Situação', 'Nota', '% do patrimônio', 'Resultado', 'O que observar'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, rows.map(({ r, rk, share, flags, status }) => h('tr', {},
+        h('td', { class: 'tk' }, r.ticker, h('small', {}, ASSET_TYPES[r.type].short)),
+        h('td', {}, h('span', { class: `badge rec-${status.cls}` }, status.label)),
+        h('td', { class: 'num' }, rk ? String(rk.score) : '—'),
+        h('td', { class: 'num' }, pct(share)),
+        h('td', { class: `num ${r.cost ? (r.value >= r.cost ? 'pos' : 'neg') : ''}` }, r.cost ? signedPct(r.value / r.cost - 1) : '—'),
+        h('td', { class: 'small', style: { 'white-space': 'normal', 'min-width': '240px' } },
+          flags.length ? h('div', {}, flags.join(' · ')) : null,
+          rk?.an?.summary ? h('div', { class: 'muted' }, rk.an.summary.slice(0, 200) + (rk.an.summary.length > 200 ? '…' : '')) : null)))))),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, '"Em risco" não quer dizer vender já: significa não aportar mais e acompanhar. A decisão de vender considera IR e o motivo da tese ter mudado.'));
 }
 
 /** Balanço mensal: foto do patrimônio de cada mês, para ver a evolução. */
@@ -689,18 +752,27 @@ function renderAporte() {
       h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)')),
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
-  const kpis = h('div', { class: 'grid kpis' },
+  // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, svc.holdings().length]);
+  const proposed = state.proposedKey === paramsKey;
+  const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
+    proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}`);
+  const proposeCard = h('div', { class: 'card row' }, proposeBtn,
+    h('span', { class: 'muted small' }, state.proposedKey && !proposed ? 'Você mudou o valor ou a divisão: clique para recalcular a proposta.' : proposed ? 'Proposta abaixo. Mudou algo acima? Clique de novo.' : 'Escolha o perfil e o valor acima e clique para ver onde colocar o dinheiro.'));
+  if (!proposed) return [form, proposeCard];
+
+  const kpis = h('div', { class: 'grid kpis', id: 'plano' },
     kpi('Aporte', brl(plan.amount), null, 'hero'),
     kpi('Investido', brl(plan.invested), `${plan.lines.length} ativos`),
     kpi('Sobra', brl(plan.leftover), 'não fecha cota inteira'));
 
   const notices = plan.warnings.length || plan.sellAlerts.length ? h('div', { class: 'notice' },
-    h('b', {}, 'Atenção'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`)))) : null;
+    h('b', {}, 'Como cheguei nessa proposta'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`)))) : null;
 
   const classes = card('Classes: antes → depois', h('span', { class: 'muted small' }, 'traço = alvo'),
     bars(plan.classes.map((c) => ({ label: ASSET_TYPES[c.type].short, value: c.pctAfter, target: c.target, cls: `fill-${c.type}`, text: `${pct(c.pctBefore)} → ${pct(c.pctAfter)} (+${brl(c.added, 0)})` })), { max: 1 }));
 
-  const lines = plan.lines.length ? card('Onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
+  const lines = plan.lines.length ? card('Proposta: onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
@@ -711,39 +783,51 @@ function renderAporte() {
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
         h('td', { class: 'num' }, brl(l.amount)),
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
-      h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
-  const manualMode = (EMBEDDED && !claudeAI) || (s.analysisMode ?? 'manual') === 'manual';
-  const askApi = async () => {
-    if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); return; }
+  const review = aiReviewCard('plan', {
+    title: 'Opinião final da IA sobre o plano',
+    intro: 'Mande o plano inteiro (carteira, proposta e motivos) para a IA revisar como um analista e sugerir a versão final.',
+    plan,
+  });
+
+  return [form, proposeCard, kpis, notices, lines, h('div', { class: 'grid two' }, classes, review)];
+}
+
+/**
+ * Parecer da IA (ranking do mês, carteira ou plano): pedir ao Claude do painel (ou Gemini pela API)
+ * ou copiar o pedido para o GPT/Gemini do site e colar a resposta. Fica salvo no mês.
+ */
+function aiReviewCard(kind, { title, intro, plan }) {
+  const month = state.month;
+  const note = svc.note(month, kind);
+  const canAsk = EMBEDDED ? Boolean(claudeAI) : hasKey();
+  const paste = h('textarea', { rows: 4, placeholder: 'Cole aqui a resposta do chat…', oninput: (e) => { state.reviewPaste[kind] = e.target.value; } });
+  paste.value = state.reviewPaste[kind] ?? '';
+  const ask = async () => {
     state.busy = true; render();
-    const j = job('Pedindo a opinião da IA sobre o aporte…');
-    try {
-      const res = await svc.reviewPlan(gemini(), state.month, plan, { onStatus: (m) => j.update(m) });
-      state.review = { key: planKey, ...res };
-      j.done('Opinião recebida.');
-    } catch (e) { j.fail(e.message); } finally { state.busy = false; render(); }
+    const j = job(`${title}: a IA está escrevendo…`);
+    try { await svc.askReview(gemini(), kind, month, { plan, onStatus: (m) => j.update(m) }); j.done(`${title}: pronto.`); }
+    catch (e) { j.fail(`${title}: ${e.message}`); }
+    finally { state.busy = false; render(); }
   };
-  const reviewPaste = h('textarea', { rows: 4, placeholder: 'Cole aqui a resposta do chat…' });
-  const manualReview = h('div', { class: 'stack', style: { 'margin-top': '10px' } },
-    h('div', { class: 'row' },
-      h('button', { class: 'btn small primary', type: 'button', disabled: !plan.lines.length, onclick: async () => {
-        toast(await copyText(svc.reviewPrompt(state.month, plan)) ? 'Pedido copiado. Cole no Gemini ou ChatGPT.' : 'Não consegui copiar.');
-      } }, '1 · Copiar pedido'),
-      CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
-    reviewPaste,
-    h('div', { class: 'row' }, h('button', { class: 'btn small primary', type: 'button', onclick: () => {
-      if (!reviewPaste.value.trim()) { toast('Cole a resposta do chat primeiro.', true); return; }
-      state.review = { key: planKey, text: reviewPaste.value.slice(0, 20000), sources: [] }; render();
-    } }, '2 · Mostrar resposta')));
-
-  const review = card('Opinião da IA sobre o plano',
-    manualMode ? h('span', { class: 'muted small' }, 'copiar e colar') : h('button', { class: 'btn small primary', type: 'button', disabled: !plan.lines.length || state.busy, onclick: askApi }, state.review ? 'Perguntar de novo' : 'Pedir opinião'),
-    state.review ? [renderPlainText(state.review.text), sourceLinks(state.review.sources)] : h('p', { class: 'muted small' }, 'A IA pesquisa o momento do mercado e comenta o plano: concentração, momento de cada ativo e ajustes sugeridos.'),
-    manualMode ? manualReview : null,
+  return h('div', { class: 'card', id: `review-${kind}` },
+    h('div', { class: 'card-head' }, h('h2', {}, title), note ? h('span', { class: 'muted small' }, `por ${note.by} · ${new Date(note.at).toLocaleString('pt-BR')}`) : null),
+    note ? renderPlainText(note.text) : h('p', { class: 'muted small' }, intro),
+    h('div', { class: 'stack', style: { 'margin-top': '12px' } },
+      h('div', { class: 'row' },
+        canAsk ? h('button', { class: 'btn small primary', type: 'button', disabled: state.busy, onclick: ask }, note ? 'Pedir de novo ao Claude' : (EMBEDDED ? 'Pedir ao Claude' : 'Pedir à IA')) : null,
+        h('button', { class: 'btn small', type: 'button', onclick: async () => {
+          toast(await copyText(svc.reviewPromptFor(kind, month, { web: true, plan })) ? 'Pedido copiado. Cole no ChatGPT ou Gemini (eles pesquisam na web) e traga a resposta.' : 'Não consegui copiar.');
+        } }, 'Copiar pedido para o GPT'),
+        CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
+      h('details', { open: Boolean(state.reviewPaste[kind]) || null }, h('summary', { class: 'small muted' }, 'Colar a resposta do GPT/Gemini'),
+        h('div', { class: 'stack', style: { 'margin-top': '8px' } }, paste,
+          h('div', { class: 'row' }, h('button', { class: 'btn small primary', type: 'button', onclick: () => {
+            try { svc.saveNote(month, kind, paste.value, 'GPT/Gemini (copiar e colar)'); state.reviewPaste[kind] = ''; toast('Parecer salvo no histórico do mês.'); render(); }
+            catch (e) { toast(e.message, true); }
+          } }, 'Salvar parecer'))))),
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Ferramenta de apoio. Não é recomendação de investimento — a decisão final é sua.'));
-
-  return [form, kpis, notices, h('div', { class: 'grid two' }, classes, review), lines];
 }
 
 // ---------- Configurações

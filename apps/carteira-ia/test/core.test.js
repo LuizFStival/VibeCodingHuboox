@@ -437,8 +437,8 @@ test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo
   assert.ok(!t.includes('BBBB3'));
   assert.equal(t.length, 2);
   assert.ok(!t.includes('AAAA3'), 'quem já tem mais fica para depois');
-  assert.ok(plan.warnings.some((w) => /acima do teto.*BBBB3/.test(w)));
-  assert.ok(plan.warnings.some((w) => /concentrado em 2/.test(w)));
+  assert.ok(plan.warnings.some((w) => /BBBB3.*passou do preço teto/.test(w)));
+  assert.ok(plan.warnings.some((w) => /escolhi 2 ativos/.test(w)));
   assert.match(plan.lines[0].reason, /potencial \+\d+% até o teto/);
   assert.ok(plan.invested > 280);
 });
@@ -463,4 +463,47 @@ test('concentração respeita as classes: cada classe com fatia relevante recebe
   const acoes = plan.lines.filter((l) => l.type === 'acoes').reduce((a, l) => a + l.amount, 0);
   assert.equal(plan.lines.length, 4);
   assert.ok(fiis > 400 && acoes > 400, `fiis ${fiis} acoes ${acoes}`);
+});
+
+// ---------------------------------------------------------------- ranking e pareceres
+
+import { buildRanking, scoreAsset } from '../public/core/ranking.js';
+
+test('ranking: grupos e nota explicável', () => {
+  const r = [normalizeReport({ assets: [
+    { ticker: 'AAAA3', allocationPct: 25, price: 10, ceilingPrice: 13, dividendYieldPct: 8, recommendation: 'COMPRAR' },
+    { ticker: 'BBBB3', allocationPct: 25, price: 20, ceilingPrice: 21, recommendation: 'COMPRAR' },
+    { ticker: 'CCCC3', allocationPct: 25, price: 10, ceilingPrice: 9, recommendation: 'AGUARDAR' },
+    { ticker: 'DDDD3', allocationPct: 25, price: 10, ceilingPrice: 14, recommendation: 'COMPRAR' },
+  ] }, { type: 'acoes', month: '2026-10' })];
+  const an = {
+    AAAA3: { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: true },
+    BBBB3: { verdict: 'PARCIAL', aiRec: 'AGUARDAR', confidence: 'media', searched: true },
+    DDDD3: { verdict: 'DISCORDA', aiRec: 'AGUARDAR', confidence: 'media', searched: true, summary: 'lucro caindo' },
+  };
+  const rk = buildRanking(r, an);
+  const g = Object.fromEntries(rk.map((x) => [x.ticker, x.group]));
+  assert.deepEqual(g, { AAAA3: 'oportunidade', BBBB3: 'potencial', CCCC3: 'aguardar', DDDD3: 'risco' });
+  assert.equal(rk[0].ticker, 'AAAA3');
+  assert.ok(rk[0].parts.some((p) => /margem até o teto \+30%/.test(p.why)));
+  // pesquisa sem web pesa menos
+  const web = scoreAsset(r[0].assets[0], { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: true }).score;
+  const noWeb = scoreAsset(r[0].assets[0], { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: false }).score;
+  assert.ok(web > noWeb);
+});
+
+test('pareceres: pedido com os dados certos, salvo por mês', async () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  svc.importReportJson(fixture('acoes.json').assets ? { ...fixture('acoes.json'), type: 'acoes', month: '2026-10' } : null);
+  svc.importHoldingsText('AAAA3 10 45');
+  const p = svc.reviewPromptFor('portfolio', '2026-10', { web: true });
+  assert.match(p, /AAAA3/);
+  assert.match(p, /pesquise rapidamente na web/);
+  assert.doesNotMatch(svc.reviewPromptFor('ranking', '2026-10'), /pesquise rapidamente/);
+  const fake = { model: 'Claude', async generate(req) { assert.match(req.parts[0].text, /parecer do mês/); return { text: '- VALE3 é a melhor.' }; } };
+  await svc.askReview(fake, 'ranking', '2026-10');
+  assert.equal(svc.note('2026-10', 'ranking').text, '- VALE3 é a melhor.');
+  svc.saveNote('2026-10', 'plan', 'ok do GPT', 'GPT');
+  assert.equal(svc.note('2026-10', 'plan').by, 'GPT');
+  assert.throws(() => svc.saveNote('2026-10', 'plan', '   ', 'GPT'), /Cole a resposta/);
 });

@@ -14,6 +14,7 @@
 //      abaixo do peso; o rebalanceamento completo acontece ao longo dos meses.
 
 import { ASSET_TYPES, TYPE_IDS } from './report.js';
+import { scoreAsset } from './ranking.js';
 
 export const DEFAULT_SETTINGS = {
   targets: { acoes: 0.4, fiis: 0.3, internacional: 0.3 },
@@ -154,10 +155,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
     if (!price) { excluded.noPrice.push(a.ticker); return false; }
     const an = analyses[a.ticker];
-    if (settings.respectAi && an?.verdict === 'DISCORDA') {
+    if (settings.respectAi && (an?.verdict === 'DISCORDA' || an?.aiRec === 'VENDER')) {
       // Só bloqueia quem foi avaliado com pesquisa na web; sem dados atuais vira só um aviso.
       if (an.searched === false) excluded.aiNoWeb.push(a.ticker);
-      else { excluded.ai.push(a.ticker); return false; }
+      else { excluded.ai.push({ ticker: a.ticker, why: an.summary }); return false; }
     }
     if (settings.respectCeiling !== false && a.ceiling && price > a.ceiling) { excluded.ceiling.push(a.ticker); return false; }
     return true;
@@ -193,12 +194,15 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       const cls = cmp.classes.find((c) => c.type === ci.key);
       const mine = cls.value ? it.current / cls.value : 0;
       const up = a.ceiling && price ? a.ceiling / price - 1 : null;
+      const sc = scoreAsset(a, analyses[a.ticker]);
       lines.push({
+        score: sc.score,
         ticker: a.ticker, name: a.name, type: ci.key, rec: a.rec, verdict: analyses[a.ticker]?.verdict ?? null,
         price, currency: ASSET_TYPES[ci.key].currency, unitBRL: price * fx, ideal: perAsset.get(a.ticker),
         deficit: it.target - it.current, fractional: ci.key === 'internacional' && settings.fractionalIntl,
         qty: 0, amount: 0,
         reason: [
+          `nota ${sc.score}`,
           `${ASSET_TYPES[ci.key].short}: ${pctBR(cls.pct, 0)} do patrimônio, alvo ${pctBR(targets[ci.key], 0)}`,
           `peso no ativo: você ${pctBR(mine, 1)}, recomendado ${pctBR(weights.get(a.ticker) ?? 0, 1)}`,
           up !== null ? `potencial ${up >= 0 ? '+' : ''}${(up * 100).toFixed(0)}% até o teto` : '',
@@ -227,7 +231,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     const kept = []; const dropped = [];
     const sumIdeal = (ls) => ls.reduce((s2, l) => s2 + l.ideal, 0);
     for (const [t, ls] of byClass) {
-      ls.sort((a, b) => b.ideal - a.ideal);
+      ls.sort((a, b) => b.ideal * (b.score / 100) - a.ideal * (a.score / 100)); // falta de peso × nota
       const keep = ls.slice(0, quota.get(t) ?? 0);
       const drop = ls.slice(keep.length);
       dropped.push(...drop);
@@ -239,7 +243,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     // Classe com fatia pequena (menos de 10%) não ganha vaga: o dinheiro dela vai para os escolhidos.
     const lost = amount - sumIdeal(kept);
     if (lost > 0.01) { const base = sumIdeal(kept); for (const l of kept) l.ideal += base ? lost * (l.ideal / base) : lost / kept.length; }
-    warnings.push(`Aporte concentrado em ${kept.length} ativos (os mais abaixo do peso em cada classe). Ficaram para os próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
+    warnings.push(`Para o aporte não virar ${kept.length + dropped.length} compras pequenas, escolhi ${kept.length} ativos (limite que você define acima): os que mais faltam na sua carteira, desempatando pela nota do ranking. Os outros recomendados continuam na fila e entram nos próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
   }
 
   // 3) cotas: arredonda para baixo e usa a sobra comprando cotas inteiras onde mais falta
@@ -257,6 +261,17 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     best.qty += 1; best.amount += best.unitBRL; leftover -= best.unitBRL;
   }
 
+  // O que não fechou cota inteira vai para os ativos fracionados (internacional), se houver.
+  const frac = lines.filter((l) => l.fractional);
+  if (leftover > 1 && frac.length) {
+    const base = frac.reduce((s2, l) => s2 + l.ideal, 0);
+    for (const l of frac) {
+      const add = base ? leftover * (l.ideal / base) : leftover / frac.length;
+      const q = Math.floor((add / l.unitBRL) * 10000) / 10000;
+      l.qty = Math.round((l.qty + q) * 10000) / 10000; l.amount = l.qty * l.unitBRL;
+    }
+  }
+
   const bought = lines.filter((l) => l.qty > 0).sort((a, b) => b.amount - a.amount);
   const invested = bought.reduce((s, l) => s + l.amount, 0);
   const totalFinal = cmp.total + invested;
@@ -267,8 +282,8 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       pctBefore: cmp.total ? c.value / cmp.total : 0, pctAfter: totalFinal ? (c.value + add) / totalFinal : 0, target: targets[c.type],
     };
   });
-  if (excluded.ceiling.length) warnings.push(`Em COMPRAR, mas com preço acima do teto (não compra agora): ${excluded.ceiling.join(', ')}.`);
-  if (excluded.ai.length) warnings.push(`Fora porque a IA discorda da compra: ${excluded.ai.join(', ')}.`);
+  if (excluded.ceiling.length) warnings.push(`Não comprei ${excluded.ceiling.join(', ')}: a casa recomenda compra, mas o preço atual já passou do preço teto. Esperar o preço voltar.`);
+  for (const x of excluded.ai) warnings.push(`Não comprei ${x.ticker}: a casa recomenda compra, mas a pesquisa da IA discordou${x.why ? ` — "${x.why.slice(0, 180)}${x.why.length > 180 ? '…' : ''}"` : '.'} (desligue "Não aportar onde a IA discorda" para incluir).`);
   if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
   if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {

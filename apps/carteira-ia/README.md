@@ -36,6 +36,13 @@ Crie uma chave gratuita em [aistudio.google.com/apikey](https://aistudio.google.
 
 Cada mês fica separado (seletor no topo), o que mantém o histórico de relatórios.
 
+### Do relatório ao aporte (fluxo do mês)
+
+1. **Carteiras:** sobe os PDFs; a IA lê e o cartão "Conferir a leitura" valida.
+2. **Análise:** pesquisa de cada ativo (copiar e colar com o GPT/Gemini do site, que pesquisam na web). Em seguida aparece o **Ranking do mês** — nota 0-100 (recomendação da casa + leitura da pesquisa + margem até o teto + DY) em Oportunidades, Potenciais, Aguardar e Em risco — e o **Parecer do mês** (Claude do painel, ou o GPT por copiar e colar).
+3. **Minha carteira:** patrimônio, **Diagnóstico** de cada posição cruzado com o ranking (concentração, acima do teto, em risco) e a **Análise da carteira pela IA**; o balanço mensal guarda a evolução.
+4. **Aporte:** perfil de alocação + valor → **Propor aporte** (cada compra com o motivo; os ativos de fora aparecem com a explicação) → **Opinião final da IA**. Os pareceres ficam salvos no mês.
+
 ## Conferir a leitura do PDF e velocidade
 
 - Cada página vai para a IA com o rótulo "Página N"; ela informa em que página achou cada ativo. O app guarda a imagem da página da tabela e mostra, no topo de cada carteira, o cartão **Conferir a leitura**: modelo usado, tempo, páginas enviadas, verificações automáticas (pesos somam ~100%, preços e tetos presentes, valores fora do normal, códigos estranhos) e o botão **Ver página original da tabela** para comparar com o que foi extraído.

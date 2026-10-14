@@ -263,3 +263,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .page-shots img { width: 100%; max-width: 900px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .btn.danger { border-color: var(--sell); color: var(--sell); }
 details.card > summary.card-summary { cursor: pointer; list-style-position: inside; }
+.rank-groups { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+.rank-group { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.rank-group h3 { color: var(--text); }
+.score { font-weight: 700; font-variant-numeric: tabular-nums; }
