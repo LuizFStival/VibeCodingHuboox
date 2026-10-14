@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   fractionalIntl: true,
   respectCeiling: true, // não compra acima do preço teto/justo do relatório
   maxOrders: 5,         // concentra o aporte nos N ativos mais abaixo do peso (0 = sem limite)
+  respectAiWait: true,  // "aguardar" da pesquisa (com web) também tira o ativo da compra
   aporteAmount: 757.4,  // valor padrão do aporte do mês (editável, fica salvo)
 };
 
@@ -147,7 +148,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   amount = Math.max(0, Number(amount) || 0);
   const totalAfter = cmp.total + amount;
 
-  const excluded = { ceiling: [], ai: [], aiNoWeb: [], noPrice: [] };
+  const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [] };
   const isEligible = (a) => {
     if (a.weight <= 0) return false;
     const recOk = a.rec === 'COMPRAR' || (settings.includeAguardar && (a.rec === 'AGUARDAR' || a.rec === 'MANTER'));
@@ -161,6 +162,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       else { excluded.ai.push({ ticker: a.ticker, why: an.summary }); return false; }
     }
     if (settings.respectCeiling !== false && a.ceiling && price > a.ceiling) { excluded.ceiling.push(a.ticker); return false; }
+    // A casa diz comprar, mas a pesquisa (com web) diz aguardar/manter: fica em atenção, sem compra.
+    if (settings.respectAiWait !== false && an && an.searched !== false && (an.aiRec === 'AGUARDAR' || an.aiRec === 'MANTER')) {
+      excluded.aiWait.push({ ticker: a.ticker, why: an.summary }); return false;
+    }
     return true;
   };
 
@@ -277,7 +282,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const totalFinal = cmp.total + invested;
   const classes = cmp.classes.map((c) => {
     const add = bought.filter((l) => l.type === c.type).reduce((s, l) => s + l.amount, 0);
+    const targetValue = totalAfter * targets[c.type];
     return {
+      targetValue, need: Math.max(0, targetValue - c.value), hasReport: c.hasReport,
       type: c.type, label: c.label, before: c.value, added: add, after: c.value + add,
       pctBefore: cmp.total ? c.value / cmp.total : 0, pctAfter: totalFinal ? (c.value + add) / totalFinal : 0, target: targets[c.type],
     };
@@ -287,7 +294,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
   if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {
-    amount, invested, leftover: Math.max(0, amount - invested),
+    amount, invested, leftover: Math.max(0, amount - invested), totalBefore: cmp.total, totalAfter,
+    attention: excluded.aiWait.map((x) => x.ticker),
+    attentionItems: excluded.aiWait,
     lines: bought, classes, warnings,
     sellAlerts: cmp.alerts.filter((a) => a.kind === 'vender'),
   };

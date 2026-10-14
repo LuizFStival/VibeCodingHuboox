@@ -6,7 +6,7 @@ import { ASSET_TYPES } from './report.js';
 
 export const GROUPS = {
   oportunidade: { label: 'Oportunidades', hint: 'compra recomendada, IA a favor e preço com margem até o teto' },
-  potencial: { label: 'Potenciais', hint: 'bons, mas com alguma ressalva (preço perto do teto ou IA em parte)' },
+  potencial: { label: 'Potenciais (atenção)', hint: 'a casa manda comprar, mas a pesquisa tem ressalva (ex.: pede para aguardar): não entram no aporte enquanto a pesquisa disser aguardar' },
   aguardar: { label: 'Aguardar', hint: 'casa ou IA mandam esperar um preço melhor' },
   risco: { label: 'Em risco / evitar', hint: 'venda recomendada, IA contra, ou fundamentos piorando' },
 };

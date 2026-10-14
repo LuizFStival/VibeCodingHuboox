@@ -748,12 +748,13 @@ function renderAporte() {
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAi, onchange: (e) => { svc.updateSettings({ respectAi: e.target.checked }); render(); } }), 'Não aportar onde a IA discorda'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.includeAguardar, onchange: (e) => { svc.updateSettings({ includeAguardar: e.target.checked }); render(); } }), 'Incluir ativos em AGUARDAR'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.fractionalIntl, onchange: (e) => { svc.updateSettings({ fractionalIntl: e.target.checked }); render(); } }), 'Internacional fracionado'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAiWait !== false, onchange: (e) => { svc.updateSettings({ respectAiWait: e.target.checked }); render(); } }), 'Seguir o "aguardar" da pesquisa'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectCeiling !== false, onchange: (e) => { svc.updateSettings({ respectCeiling: e.target.checked }); render(); } }), 'Não comprar acima do preço teto'),
       h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)')),
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, svc.holdings().length]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, svc.holdings().length]);
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
     proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}`);
@@ -765,6 +766,24 @@ function renderAporte() {
     kpi('Aporte', brl(plan.amount), null, 'hero'),
     kpi('Investido', brl(plan.invested), `${plan.lines.length} ativos`),
     kpi('Sobra', brl(plan.leftover), 'não fecha cota inteira'));
+
+  // O balanço que a conta usou: quanto cada classe tem, quanto deveria ter depois do aporte e quanto falta.
+  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)} + aporte ${brl(plan.amount, 0)} = ${brl(plan.totalAfter, 0)}`),
+    h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['Classe', 'Hoje', 'Alvo', 'Valor no alvo', 'Falta para o alvo', 'Recebe agora', 'Por quê'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, plan.classes.map((c) => h('tr', {},
+        h('td', {}, h('span', { class: `dot type-${c.type}` }), c.label),
+        h('td', { class: 'num' }, `${brl(c.before, 0)} (${pct(c.pctBefore)})`),
+        h('td', { class: 'num' }, pct(c.target, 0)),
+        h('td', { class: 'num' }, brl(c.targetValue, 0)),
+        h('td', { class: 'num' }, c.need > 1 ? brl(c.need, 0) : '—'),
+        h('td', { class: `num ${c.added > 0 ? 'pos' : ''}` }, c.added > 0 ? brl(c.added, 0) : 'R$ 0'),
+        h('td', { class: 'small', style: { 'white-space': 'normal' } },
+          !c.hasReport ? 'sem relatório neste mês'
+            : c.need <= 1 ? 'já está no alvo (ou acima): não precisa de dinheiro este mês'
+            : c.added <= 0 ? 'falta dinheiro, mas nenhum ativo da classe está liberado para compra (veja abaixo)'
+            : c.added < c.need * 0.95 - 5 ? 'recebe parte do que falta; o resto nos próximos aportes' : 'recebe o que falta (a diferença é o arredondamento das cotas)')))))),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'A proposta é uma conta (por isso sai na hora): o aporte cobre primeiro o que falta em cada classe para chegar ao alvo e, dentro dela, vai para os ativos liberados com maior nota e mais abaixo do peso. A IA entra na opinião final, abaixo.'));
 
   const notices = plan.warnings.length || plan.sellAlerts.length ? h('div', { class: 'notice' },
     h('b', {}, 'Como cheguei nessa proposta'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`)))) : null;
@@ -791,7 +810,11 @@ function renderAporte() {
     plan,
   });
 
-  return [form, proposeCard, kpis, notices, lines, h('div', { class: 'grid two' }, classes, review)];
+  const attention = plan.attentionItems?.length ? card(`Em atenção: não comprei agora (${plan.attentionItems.length})`, h('span', { class: 'muted small' }, 'a casa recomenda compra, mas a pesquisa pede para aguardar'),
+    h('ul', { class: 'alert-list' }, plan.attentionItems.map((x) => h('li', { class: 'preco' }, h('b', {}, x.ticker), x.why ? h('div', { class: 'muted small' }, x.why.slice(0, 220) + (x.why.length > 220 ? '…' : '')) : null))),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Eles voltam para a compra quando a pesquisa do mês disser comprar. Para incluir mesmo assim, desmarque "Seguir o aguardar da pesquisa".')) : null;
+
+  return [form, proposeCard, kpis, balance, notices, lines, attention, h('div', { class: 'grid two' }, classes, review)];
 }
 
 /**

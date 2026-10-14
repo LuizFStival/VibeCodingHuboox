@@ -507,3 +507,22 @@ test('pareceres: pedido com os dados certos, salvo por mês', async () => {
   assert.equal(svc.note('2026-10', 'plan').by, 'GPT');
   assert.throws(() => svc.saveNote('2026-10', 'plan', '   ', 'GPT'), /Cole a resposta/);
 });
+
+test('"aguardar" da pesquisa tira da compra e vai para atenção; aguardar da casa nunca compra', () => {
+  const r = [normalizeReport({ assets: [
+    { ticker: 'AAAA3', allocationPct: 50, price: 10, ceilingPrice: 13, recommendation: 'COMPRAR' },
+    { ticker: 'BBBB3', allocationPct: 30, price: 10, ceilingPrice: 13, recommendation: 'COMPRAR' },
+    { ticker: 'CCCC3', allocationPct: 20, price: 10, ceilingPrice: 13, recommendation: 'AGUARDAR' },
+  ] }, { type: 'acoes', month: '2026-10' })];
+  const an = { BBBB3: { verdict: 'PARCIAL', aiRec: 'AGUARDAR', searched: true, summary: 'preço perto do teto' }, CCCC3: { verdict: 'DISCORDA', aiRec: 'COMPRAR', searched: true } };
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0 };
+  const plan = planAporte({ amount: 1000, holdings: [], reports: r, analyses: an, settings: st });
+  assert.deepEqual(plan.lines.map((l) => l.ticker), ['AAAA3']);
+  assert.deepEqual(plan.attention, ['BBBB3']);
+  assert.equal(plan.attentionItems[0].why, 'preço perto do teto');
+  const acoes = plan.classes.find((c) => c.type === 'acoes');
+  assert.ok(acoes.need > 990 && acoes.targetValue > 990);
+  const off = planAporte({ amount: 1000, holdings: [], reports: r, analyses: an, settings: { ...st, respectAiWait: false } });
+  assert.ok(off.lines.some((l) => l.ticker === 'BBBB3'));
+  assert.ok(!off.lines.some((l) => l.ticker === 'CCCC3'), 'aguardar da casa nunca entra, mesmo com a IA dizendo comprar');
+});

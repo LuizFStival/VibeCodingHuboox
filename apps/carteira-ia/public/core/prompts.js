@@ -116,6 +116,7 @@ export function analysisPrompt(report, assets, today) {
     '',
     `Pesquise na web informações ATUAIS de cada ativo: ${FOCUS[report.type]}`,
     'Para cada ativo, diga se concorda com a recomendação do relatório e por quê. Seja objetivo, use números e cite datas.',
+    'Regra: quando o relatório diz AGUARDAR (ou o preço está acima do preço teto), não recomende COMPRAR — use AGUARDAR e explique o que precisa mudar para virar compra.',
     'Responda SOMENTE com um JSON válido, sem texto fora dele, neste formato:',
     JSON.stringify({
       visaoGeral: 'parágrafo curto sobre o cenário atual para esta classe de ativos',
@@ -152,6 +153,7 @@ export function manualAnalysisPrompt(report, assets, today) {
     '',
     `PESQUISE NA WEB dados atuais de CADA ativo: ${FOCUS[report.type]}`,
     'Para cada ativo diga se concorda com a recomendação do relatório e por quê, com números e datas.',
+    'Regra: quando o relatório diz AGUARDAR (ou o preço está acima do preço teto), não recomende COMPRAR — use AGUARDAR e explique o que precisa mudar (preço, resultado) para virar compra.',
     'Seja breve para caber tudo: no máximo 3 fundamentos, 2 notícias e 2 riscos por ativo.',
     `Responda com UM ÚNICO bloco de código JSON (sem texto fora dele), com os ${assets.length} ativos, neste formato:`,
     JSON.stringify({
