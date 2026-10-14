@@ -248,3 +248,34 @@ test('análise: texto livre vira JSON, cota no meio salva progresso e dá para c
   assert.equal(Object.keys(svc.analysis(id).items).length, 7, 'mantém o que já tinha + o que faltava');
   assert.deepEqual(svc.analysis(id).pending, []);
 });
+
+// ---------------------------------------------------------------- modelo desativado
+
+import { pickModel, usefulModels } from '../public/core/gemini.js';
+
+const USER_MODELS = 'gemini-2.5-computer-use-preview-10-2025, gemini-2.5-flash, gemini-2.5-flash-image, gemini-2.5-flash-lite, gemini-2.5-flash-preview-tts, gemini-2.5-pro, gemini-2.5-pro-preview-tts, gemini-3-flash-preview, gemini-3-pro-image, gemini-3-pro-image-preview, gemini-3.1-flash-image, gemini-3.1-flash-image-preview, gemini-3.1-flash-lite, gemini-3.1-flash-lite-image, gemini-3.1-flash-lite-preview, gemini-3.1-flash-tts-preview, gemini-3.1-pro-preview, gemini-3.1-pro-preview-customtools, gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.5-transcribe, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-3.8-flash-lite-tts, gemini-3.8-flash-tts, gemini-4-argon, gemini-flash-latest, gemini-flash-lite-latest, gemini-nano-banana-2.1, gemini-omni-1.1-flash, gemini-omni-flash-preview, gemini-pro-latest, gemini-robotics-er-2-preview'.split(', ');
+
+test('escolhe o modelo certo na lista da chave', () => {
+  const useful = usefulModels(USER_MODELS);
+  assert.equal(useful[0], 'gemini-flash-latest');
+  for (const bad of ['gemini-2.5-flash-image', 'gemini-3.8-flash-tts', 'gemini-3.5-transcribe', 'gemini-robotics-er-2-preview', 'gemini-nano-banana-2.1']) assert.ok(!useful.includes(bad), bad);
+  assert.equal(pickModel(USER_MODELS), 'gemini-flash-latest');
+  assert.equal(pickModel(USER_MODELS, 'gemini-3.8-flash'), 'gemini-3.8-flash');
+  assert.equal(pickModel(USER_MODELS.filter((m) => !m.endsWith('-latest'))), 'gemini-3.8-flash');
+});
+
+test('modelo desativado: troca pelo recomendado pela API e repete a chamada', async () => {
+  const urls = []; const changes = [];
+  const fetch = async (url) => {
+    urls.push(url);
+    if (!url.includes(':generateContent')) return { ok: true, status: 200, json: async () => ({ models: USER_MODELS.map((m) => ({ name: `models/${m}`, supportedGenerationMethods: ['generateContent'] })) }) };
+    if (url.includes('gemini-2.5-flash:')) return errBody(404, { code: 404, status: 'NOT_FOUND', message: 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash for the latest features and improvements.' });
+    return okBody('ok');
+  };
+  const g = createGemini({ apiKey: 'k', model: 'gemini-2.5-flash', minIntervalMs: 0, sleep: async () => {}, fetch, onModelChange: (n, o) => changes.push([o, n]) });
+  const res = await g.generate({ parts: [{ text: 'x' }] });
+  assert.equal(res.text, 'ok');
+  assert.deepEqual(changes, [['gemini-2.5-flash', 'gemini-3.8-flash']]);
+  assert.equal(g.model, 'gemini-3.8-flash');
+  assert.match(urls.at(-1), /gemini-3\.8-flash:generateContent/);
+});

@@ -4,7 +4,7 @@
 
 import { createService } from './core/service.js';
 import { createStore, memoryStorage } from './core/store.js';
-import { createGemini, DEFAULT_MODEL, MODEL_OPTIONS } from './core/gemini.js';
+import { createGemini, DEFAULT_MODEL, MODEL_OPTIONS, usefulModels, pickModel } from './core/gemini.js';
 import { ASSET_TYPES, TYPE_IDS, detectMonth, detectType, reportStats, upside } from './core/report.js';
 import { VERDICTS } from './core/prompts.js';
 
@@ -109,7 +109,12 @@ function job(label) {
 }
 
 function gemini() {
-  return createGemini({ apiKey: store.apiKey, model: svc.model || DEFAULT_MODEL });
+  return createGemini({
+    apiKey: store.apiKey,
+    model: svc.model || DEFAULT_MODEL,
+    // Modelo desativado pelo Google: o cliente troca sozinho; aqui só salvamos e avisamos.
+    onModelChange: (next, old) => { svc.setModel(next); toast(`O modelo ${old} não está mais disponível na sua chave. Passei a usar ${next}.`); },
+  });
 }
 const hasKey = () => Boolean(store.apiKey);
 
@@ -531,15 +536,22 @@ async function diagnose(kind) {
     const g = gemini();
     if (kind === 'models') {
       state.models = await g.listModels();
-      state.diag = { ok: true, title: `${state.models.length} modelos Gemini disponíveis para a sua chave`, lines: [state.models.join(', '), state.models.includes(model) ? `O modelo atual (${model}) está na lista.` : `Atenção: o modelo atual (${model}) NÃO está na lista — escolha outro acima.`] };
+      const useful = usefulModels(state.models);
+      const lines = [`Úteis para o app: ${useful.join(', ')}`];
+      if (useful.includes(model)) lines.push(`O modelo atual (${model}) está disponível.`);
+      else {
+        const best = pickModel(state.models);
+        if (best) { svc.setModel(best); lines.push(`O modelo ${model} não está disponível na sua chave — passei a usar ${best}.`); }
+      }
+      state.diag = { ok: true, title: `${useful.length} modelos disponíveis para a sua chave`, lines };
     } else if (kind === 'conn') {
       const res = await g.generate({ parts: [{ text: 'Responda apenas: OK' }], temperature: 0, onRetry: (m) => { state.diag.lines = [m]; render(); } });
-      state.diag = { ok: true, title: `Conexão ok com ${model}`, lines: [`Resposta: ${res.text.trim().slice(0, 60)}`] };
+      state.diag = { ok: true, title: `Conexão ok com ${g.model}`, lines: [`Resposta: ${res.text.trim().slice(0, 60)}`] };
     } else {
       const res = await g.generate({ parts: [{ text: 'Qual foi a última taxa Selic definida pelo Copom e em que data? Responda em uma frase.' }], search: true, onRetry: (m) => { state.diag.lines = [m]; render(); } });
       state.diag = res.searched
-        ? { ok: true, title: `Pesquisa na web funcionando (${model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, `Buscas: ${res.queries.join(' · ') || '—'}`, `${res.sources.length} fonte(s).`] }
-        : { ok: false, title: `O modelo respondeu, mas sem pesquisar na web (${model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, 'Sem pesquisa, a análise usa só o conhecimento do modelo (pode estar desatualizado). Tente outro modelo.'] };
+        ? { ok: true, title: `Pesquisa na web funcionando (${g.model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, `Buscas: ${res.queries.join(' · ') || '—'}`, `${res.sources.length} fonte(s).`] }
+        : { ok: false, title: `O modelo respondeu, mas sem pesquisar na web (${g.model})`, lines: [`Resposta: ${res.text.trim().slice(0, 240)}`, 'Sem pesquisa, a análise usa só o conhecimento do modelo (pode estar desatualizado). Tente outro modelo.'] };
     }
   } catch (e) {
     state.diag = { ok: false, title: e.message, lines: e.raw && e.raw !== e.message ? [`Resposta da API: ${e.raw}`] : [] };
@@ -551,8 +563,8 @@ async function diagnose(kind) {
 
 function renderSettings() {
   const keyInput = h('input', { type: 'password', placeholder: hasKey() ? '•••••••• (salva)' : 'Cole aqui a sua chave', autocomplete: 'off', style: { flex: '1 1 260px' } });
-  const modelSelect = h('select', {}, [...new Set([...(state.models ?? MODEL_OPTIONS), svc.model || DEFAULT_MODEL])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
-  const customModel = h('input', { type: 'text', placeholder: 'ou digite outro modelo (ex.: gemini-3-pro-preview)', style: { flex: '1 1 260px' } });
+  const modelSelect = h('select', {}, [...new Set([svc.model || DEFAULT_MODEL, ...MODEL_OPTIONS, ...usefulModels(state.models ?? [])])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
+  const customModel = h('input', { type: 'text', placeholder: 'ou digite outro modelo (ex.: gemini-3.8-flash)', style: { flex: '1 1 260px' } });
 
   const api = card('API do Gemini', null,
     h('div', { class: 'stack' },
@@ -567,7 +579,7 @@ function renderSettings() {
         h('button', { class: 'btn', type: 'button', disabled: !hasKey() || state.busy, onclick: () => diagnose('search') }, 'Testar pesquisa na web'),
         h('button', { class: 'btn', type: 'button', disabled: !hasKey() || state.busy, onclick: () => diagnose('models') }, 'Ver modelos da minha chave')),
       state.diag ? h('div', { class: state.diag.ok ? 'notice ok' : 'notice' }, h('b', {}, state.diag.title), state.diag.lines.map((l) => h('div', { class: 'small' }, l))) : null,
-      h('p', { class: 'muted small' }, 'Flash é rápido e barato; Pro lê tabelas e raciocina melhor. No plano gratuito os limites por minuto e por dia são baixos — se a análise parar por cota, use "Continuar de onde parou" mais tarde, troque o modelo ou ative o faturamento no AI Studio.')));
+      h('p', { class: 'muted small' }, 'Recomendado: gemini-flash-latest (sempre o Flash mais novo). Pro lê tabelas e raciocina melhor, mas tem limites menores. No plano gratuito os limites por minuto e por dia são baixos — se a análise parar por cota, use "Continuar de onde parou" mais tarde, troque o modelo ou ative o faturamento no AI Studio.')));
 
   const data = card('Dados', null,
     h('div', { class: 'stack' },

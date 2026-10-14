@@ -114,7 +114,7 @@ export function createService(store) {
       const persist = (pending) => store.update((data) => {
         const prev = data.analyses[id];
         data.analyses[id] = {
-          at: result.at, model: result.model,
+          at: result.at, model: gemini.model,
           overview: result.overview || prev?.overview || '',
           items: { ...(prev?.items ?? {}), ...result.items },
           errors: result.errors.slice(0, 20),

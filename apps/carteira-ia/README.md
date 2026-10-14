@@ -22,7 +22,7 @@ Na Vercel: importe o repositório com **Root Directory** `apps/carteira-ia` e pr
 
 ## Chave do Gemini
 
-Crie uma chave gratuita em [aistudio.google.com/apikey](https://aistudio.google.com/apikey) e cole em **Configurações**. Ela fica só no navegador (não vai para o backup). O modelo padrão é `gemini-2.5-flash`; dá para trocar por `gemini-2.5-pro` (lê tabelas melhor) ou digitar outro.
+Crie uma chave gratuita em [aistudio.google.com/apikey](https://aistudio.google.com/apikey) e cole em **Configurações**. Ela fica só no navegador (não vai para o backup). O modelo padrão é `gemini-flash-latest`, que sempre aponta para o Flash mais novo. Se o Google desativar o modelo escolhido, o app troca sozinho pelo que a API recomenda e avisa.
 
 ## As etapas
 

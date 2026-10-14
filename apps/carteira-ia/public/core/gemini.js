@@ -6,8 +6,30 @@
 //   - 429/5xx/queda de rede: tenta de novo, esperando o tempo que a API pede (RetryInfo);
 //   - cota DIÁRIA esgotada: não adianta insistir — erro com `daily = true`.
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
-export const MODEL_OPTIONS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite', 'gemini-3-flash-preview', 'gemini-3-pro-preview'];
+// Aliases "-latest" sempre apontam para a versão atual: o Google desativa modelos
+// numerados com o tempo (ex.: gemini-2.5-flash deixou de valer para chaves novas).
+export const DEFAULT_MODEL = 'gemini-flash-latest';
+export const MODEL_OPTIONS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest'];
+
+// Modelos que não servem para ler PDF + responder texto/JSON com pesquisa.
+const NOT_FOR_TEXT = /image|tts|transcribe|computer-use|robotics|nano|omni|customtools|embedding|live|audio|veo|imagen/i;
+
+/** Filtra a lista da chave para os modelos úteis ao app, dos mais novos para os mais antigos. */
+export function usefulModels(models) {
+  const version = (m) => Number((m.match(/gemini-(\d+(?:\.\d+)?)/) ?? [])[1] ?? 0);
+  return [...new Set(models)].filter((m) => /^gemini/.test(m) && !NOT_FOR_TEXT.test(m))
+    .sort((a, b) => (/-latest$/.test(b) - /-latest$/.test(a)) || version(b) - version(a) || a.localeCompare(b));
+}
+
+/** Melhor modelo para o app: o sugerido pela API, senão o Flash mais atual disponível. */
+export function pickModel(models, suggested) {
+  const list = usefulModels(models);
+  if (suggested && list.includes(suggested)) return suggested;
+  return list.find((m) => m === 'gemini-flash-latest')
+    ?? list.find((m) => /^gemini-[\d.]+-flash$/.test(m))
+    ?? list.find((m) => /flash/.test(m) && !/lite/.test(m))
+    ?? list[0] ?? null;
+}
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const MAX_RETRIES = 4;
 const MAX_WAIT_MS = 90_000;
@@ -60,8 +82,11 @@ export function toGeminiError(status, payload, model) {
   if ((status === 400 || status === 403) && /api key|API_KEY|permission denied/i.test(msg)) {
     return new GeminiError('Chave da API do Gemini inválida ou sem permissão.', { status: 401, raw: msg });
   }
-  if (status === 404 || /not found|is not supported for generateContent/i.test(msg)) {
-    return new GeminiError(`O modelo "${model}" não existe ou não está disponível para a sua chave. Escolha outro em Configurações (botão "Ver modelos da minha chave").`, { status: 404, raw: msg });
+  if (status === 404 || /not found|no longer available|is not supported for generateContent/i.test(msg)) {
+    const e = new GeminiError(`O modelo "${model}" não existe ou não está mais disponível para a sua chave.`, { status: 404, raw: msg });
+    e.modelUnavailable = true;
+    e.suggestedModel = (msg.match(/use (?:models\/)?(gemini[\w.-]*\w)/i) ?? [])[1] ?? null;
+    return e;
   }
   if (status === 400 && /search|grounding|tool/i.test(msg)) {
     return new GeminiError(`O modelo ${model} recusou a pesquisa do Google: ${msg}`, { status, searchUnsupported: true, raw: msg });
@@ -77,7 +102,7 @@ let queue = Promise.resolve();
 let lastStart = 0;
 
 export function createGemini({
-  apiKey, model = DEFAULT_MODEL, minIntervalMs = 4000,
+  apiKey, model = DEFAULT_MODEL, minIntervalMs = 4000, onModelChange,
   fetch: fetchImpl = globalThis.fetch.bind(globalThis),
   sleep = (ms, signal) => new Promise((resolve, reject) => {
     const t = setTimeout(resolve, ms);
@@ -116,6 +141,7 @@ export function createGemini({
     if (schema && !search) Object.assign(body.generationConfig, { responseMimeType: 'application/json', responseSchema: schema });
     if (search) body.tools = [{ google_search: {} }];
 
+    let switched = false;
     const run = async () => {
       for (let attempt = 0; ; attempt++) {
         const wait = lastStart + minIntervalMs - Date.now();
@@ -124,6 +150,20 @@ export function createGemini({
         try {
           return parse(await once(body, signal), search);
         } catch (e) {
+          if (e.modelUnavailable && !switched) {
+            // Modelo desativado: troca pelo recomendado (ou o Flash atual da chave) e repete.
+            switched = true;
+            const next = pickModel(await listModels().catch(() => []), e.suggestedModel) ?? e.suggestedModel;
+            if (next && next !== model) {
+              const old = model;
+              model = next;
+              onModelChange?.(next, old);
+              onRetry?.(`Modelo ${old} indisponível; usando ${next}…`);
+              attempt--;
+              continue;
+            }
+            e.message += ' Escolha outro em Configurações ("Ver modelos da minha chave").';
+          }
           if (!e.retryable || attempt >= MAX_RETRIES) throw e;
           const ms = Math.min(MAX_WAIT_MS, e.retryAfterMs ?? 2000 * 2 ** attempt) + 500;
           onRetry?.(`${e.message} Tentando de novo em ${Math.round(ms / 1000)} s (${attempt + 1}/${MAX_RETRIES})…`);
@@ -176,5 +216,5 @@ export function createGemini({
     return out.sort();
   }
 
-  return { model, generate, listModels };
+  return { get model() { return model; }, generate, listModels };
 }
