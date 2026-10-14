@@ -43,7 +43,8 @@ O plano gratuito do Gemini tem limites baixos de requisições por minuto e por 
 - se a API responder **429 (limite por minuto)** ou instabilidade (5xx), o app espera o tempo que a própria API indica e tenta de novo (até 4 vezes), mostrando a espera na barra de progresso;
 - se a **cota diária** acabar, a análise para na hora (não adianta insistir), guarda o que já veio e mostra **Continuar de onde parou** no cartão da carteira;
 - se o modelo responder em texto em vez de JSON, uma segunda chamada (sem pesquisa) organiza o texto;
-- cada ativo indica se a resposta veio **com ou sem pesquisa na web**.
+- cada ativo indica se a resposta veio **com ou sem pesquisa na web**;
+- se a **pesquisa do Google** não tiver cota na sua chave (no plano gratuito ela costuma ter cota zero nos modelos novos), a análise segue sem pesquisa, só com o conhecimento do modelo. Para ter a pesquisa, ative o faturamento no Google AI Studio.
 
 Em **Configurações** há três testes: conexão, pesquisa na web (Google Search) e a lista dos modelos disponíveis para a sua chave. O erro completo da API aparece ali e no cartão da análise.
 

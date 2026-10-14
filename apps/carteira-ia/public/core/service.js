@@ -86,17 +86,23 @@ export function createService(store) {
       const assets = report.assets.filter((a) => !tickers || tickers.includes(a.ticker));
       const result = { at: new Date().toISOString(), model: gemini.model, overview: '', items: {}, errors: [], fatal: null, searched: 0 };
 
+      let noSearch = false;
       const ask = async (chunk) => {
         const wanted = chunk.map((a) => a.ticker);
         const parts = [{ text: analysisPrompt(report, chunk, todayISO()) }];
         let res;
-        try {
-          res = await gemini.generate({ parts, search: true, temperature: 0.3, signal, onRetry: onStatus });
-        } catch (e) {
-          if (!e.searchUnsupported) throw e;
-          result.errors.push(`${e.message} — análise feita sem pesquisa na web.`);
-          res = await gemini.generate({ parts, schema: ANALYSIS_SCHEMA, temperature: 0.3, signal, onRetry: onStatus });
+        if (!noSearch) {
+          try {
+            res = await gemini.generate({ parts, search: true, temperature: 0.3, signal, onRetry: onStatus });
+          } catch (e) {
+            if (!e.searchUnsupported && !e.searchQuota) throw e;
+            // Sem pesquisa disponível: segue o resto da análise sem ela (marcado em cada ativo).
+            noSearch = true;
+            result.errors.push(`${e.message} A análise seguiu sem pesquisa na web, só com o conhecimento do modelo.`);
+            onStatus?.('pesquisa do Google indisponível na sua chave — seguindo sem pesquisa');
+          }
         }
+        if (!res) res = await gemini.generate({ parts: [{ text: `${parts[0].text}\n\nATENÇÃO: você está sem acesso à web agora. Use o que sabe, deixe claro até quando vão seus dados e use confiança "baixa" quando não tiver certeza.` }], schema: ANALYSIS_SCHEMA, temperature: 0.3, signal, onRetry: onStatus });
         let raw;
         try {
           raw = res.json();
@@ -204,12 +210,15 @@ export function createService(store) {
       return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: d().settings });
     },
     async reviewPlan(gemini, month, plan, { signal, onStatus } = {}) {
-      const res = await gemini.generate({
-        onRetry: onStatus,
-        parts: [{ text: aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() }) }],
-        search: true, temperature: 0.4, signal,
-      });
-      return { text: res.text, sources: res.sources };
+      const parts = [{ text: aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() }) }];
+      try {
+        const res = await gemini.generate({ parts, search: true, temperature: 0.4, signal, onRetry: onStatus });
+        return { text: res.text, sources: res.sources, searched: res.searched };
+      } catch (e) {
+        if (!e.searchQuota && !e.searchUnsupported) throw e;
+        const res = await gemini.generate({ parts, temperature: 0.4, signal, onRetry: onStatus });
+        return { text: `(Sem pesquisa na web: ${e.message})\n\n${res.text}`, sources: [], searched: false };
+      }
     },
 
     // ---------------- backup

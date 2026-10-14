@@ -279,3 +279,36 @@ test('modelo desativado: troca pelo recomendado pela API e repete a chamada', as
   assert.equal(g.model, 'gemini-3.8-flash');
   assert.match(urls.at(-1), /gemini-3\.8-flash:generateContent/);
 });
+
+// ---------------------------------------------------------------- pesquisa sem cota
+
+const searchQuotaErr = { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits.' };
+
+test('429 na pesquisa sem tempo de espera = pesquisa sem cota (não insiste)', async () => {
+  let calls = 0;
+  const g = createGemini({ apiKey: 'k', model: 'gemini-flash-latest', minIntervalMs: 0, sleep: async () => {}, fetch: async () => { calls++; return errBody(429, searchQuotaErr); } });
+  await assert.rejects(g.generate({ parts: [{ text: 'x' }], search: true }), (e) => e.searchQuota && !e.retryable && /pesquisa do Google/.test(e.message));
+  assert.equal(calls, 1);
+});
+
+test('análise segue sem pesquisa quando a chave não tem cota de pesquisa', async () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  svc.importReportJson({ ...fixture('acoes.json'), type: 'acoes', month: '2026-10', assets: [...fixture('acoes.json').assets, { ticker: 'FFFF3', allocationPct: 5, recommendation: 'COMPRAR' }] });
+  const id = '2026-10:acoes';
+  let searchCalls = 0;
+  const fake = {
+    model: 'fake',
+    async generate(req) {
+      if (req.search) { searchCalls++; const e = new Error('A pesquisa do Google não está liberada'); e.searchQuota = true; throw e; }
+      const tickers = [...req.parts[0].text.matchAll(/"ticker":"([A-Z0-9]+)"/g)].map((m) => m[1]).filter((t) => t !== 'XXXX3');
+      assert.match(req.parts[0].text, /sem acesso à web/);
+      return { json: () => ({ ativos: tickers.map((t) => ({ ticker: t, veredito: 'CONCORDA', resumo: 'ok' })) }), sources: [] };
+    },
+  };
+  const res = await svc.analyzeReport(fake, id);
+  assert.equal(searchCalls, 1, 'tenta a pesquisa uma vez só');
+  assert.equal(Object.keys(res.items).length, 6);
+  assert.deepEqual(res.pending, []);
+  assert.equal(svc.analysis(id).items.FFFF3.searched, false);
+  assert.match(res.errors[0], /sem pesquisa na web/);
+});

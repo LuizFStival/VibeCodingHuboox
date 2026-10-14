@@ -35,9 +35,9 @@ const MAX_RETRIES = 4;
 const MAX_WAIT_MS = 90_000;
 
 export class GeminiError extends Error {
-  constructor(message, { status = 0, retryAfterMs = null, daily = false, retryable = false, searchUnsupported = false, raw = '' } = {}) {
+  constructor(message, { status = 0, retryAfterMs = null, daily = false, retryable = false, searchUnsupported = false, searchQuota = false, raw = '' } = {}) {
     super(message);
-    Object.assign(this, { status, retryAfterMs, daily, retryable, searchUnsupported, raw });
+    Object.assign(this, { status, retryAfterMs, daily, retryable, searchUnsupported, searchQuota, raw });
   }
 }
 
@@ -64,20 +64,30 @@ const safeUrl = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.p
 const parseDelay = (d) => { const m = String(d ?? '').match(/^([\d.]+)s$/); return m ? Math.ceil(Number(m[1]) * 1000) : null; };
 
 /** Converte a resposta de erro da API em GeminiError com mensagem em português e o que fazer. */
-export function toGeminiError(status, payload, model) {
+export function toGeminiError(status, payload, model, { search = false } = {}) {
   const err = payload?.error ?? {};
   const msg = String(err.message ?? '').slice(0, 600) || `HTTP ${status}`;
   const details = Array.isArray(err.details) ? err.details : [];
   const retry = details.find((d) => /RetryInfo/.test(d?.['@type']));
-  const quotaIds = details.filter((d) => /QuotaFailure/.test(d?.['@type'])).flatMap((d) => d.violations ?? []).map((v) => `${v.quotaId ?? ''} ${v.quotaMetric ?? ''}`).join(' ');
+  const quotaIds = details.filter((d) => /QuotaFailure/.test(d?.['@type'])).flatMap((d) => d.violations ?? [])
+    .map((v) => [v.quotaId, v.quotaMetric, v.quotaValue !== undefined ? `limite ${v.quotaValue}` : ''].filter(Boolean).join(' ')).join(' | ');
   const retryAfterMs = parseDelay(retry?.retryDelay) ?? (() => { const m = msg.match(/retry in ([\d.]+)\s*s/i); return m ? Math.ceil(Number(m[1]) * 1000) : null; })();
+  const raw = quotaIds ? `${msg} [cota: ${quotaIds}]` : msg;
 
   if (status === 429 || err.status === 'RESOURCE_EXHAUSTED') {
-    const daily = /per ?day|PerDay|daily/i.test(quotaIds || msg);
-    if (daily) {
-      return new GeminiError(`Cota diária do modelo ${model} esgotada na sua chave. Volta amanhã — ou troque o modelo em Configurações (ex.: gemini-2.5-flash-lite) ou ative o faturamento no Google AI Studio para limites maiores.`, { status, daily: true, raw: msg });
+    const daily = /per ?day|PerDay|daily/i.test(quotaIds);
+    const perMinute = retryAfterMs !== null || /per ?minute|PerMinute/i.test(quotaIds);
+    const searchQuota = search && (/search|grounding/i.test(quotaIds) || !perMinute);
+    // Pesquisa do Google sem cota (no plano gratuito costuma ser 0 nos modelos novos):
+    // não adianta repetir — quem chamou pode seguir sem pesquisa.
+    if (searchQuota) {
+      return new GeminiError(`A pesquisa do Google não está liberada (ou esgotou) para a sua chave no modelo ${model}. No plano gratuito ela costuma ter cota zero; com o faturamento ativado no Google AI Studio ela passa a funcionar.`, { status, searchQuota: true, daily, raw });
     }
-    return new GeminiError(`Limite de requisições por minuto atingido (${model}).`, { status, retryAfterMs, retryable: true, raw: msg });
+    if (daily) {
+      return new GeminiError(`Cota diária do modelo ${model} esgotada na sua chave. Volta amanhã — ou troque o modelo em Configurações (ex.: gemini-flash-lite-latest) ou ative o faturamento no Google AI Studio para limites maiores.`, { status, daily: true, raw });
+    }
+    if (perMinute) return new GeminiError(`Limite de requisições por minuto atingido (${model}).`, { status, retryAfterMs, retryable: true, raw });
+    return new GeminiError(`Cota da sua chave esgotada para o modelo ${model}. Veja o uso em ai.dev/rate-limit, troque o modelo ou ative o faturamento no Google AI Studio.`, { status, retryAfterMs: 15000, retryable: true, raw });
   }
   if ((status === 400 || status === 403) && /api key|API_KEY|permission denied/i.test(msg)) {
     return new GeminiError('Chave da API do Gemini inválida ou sem permissão.', { status: 401, raw: msg });
@@ -112,6 +122,7 @@ export function createGemini({
   if (!apiKey) throw new GeminiError('Configure sua chave da API do Gemini em Configurações.', { status: 401 });
 
   async function once(body, signal) {
+    const search = Boolean(body.tools);
     let res;
     try {
       res = await fetchImpl(`${ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
@@ -125,7 +136,7 @@ export function createGemini({
       throw new GeminiError(`Sem conexão com a API do Gemini (${e.message}).`, { retryable: true });
     }
     const payload = await res.json().catch(() => ({}));
-    if (!res.ok) throw toGeminiError(res.status, payload, model);
+    if (!res.ok) throw toGeminiError(res.status, payload, model, { search });
     return payload;
   }
 
