@@ -97,6 +97,7 @@ export function normalizeReport(raw, { type, month } = {}) {
       pvp: parseNumber(a.pvp),
       rec,
       thesis: text(a.thesis, 3000),
+      page: Number.isInteger(a.page) && a.page > 0 ? a.page : null,
     });
   }
   if (!assets.length) throw new Error('Nenhum ativo encontrado no relatório.');
@@ -116,6 +117,7 @@ export function normalizeReport(raw, { type, month } = {}) {
       reason: text(c?.reason, 800),
     })).filter((c) => c.ticker || c.reason).slice(0, 30),
     assets,
+    tablePages: list(raw.tablePages).filter((n) => Number.isInteger(n) && n > 0).slice(0, 4),
     performance: {
       period: text(raw.performance?.period, 80),
       items: list(raw.performance?.items).map((i) => ({
@@ -156,4 +158,33 @@ export function reportStats(report) {
     sell: count('VENDER'),
     segments: [...bySegment.entries()].map(([name, share]) => ({ name, share })).sort((a, b) => b.share - a.share),
   };
+}
+
+/**
+ * Conferências automáticas do que foi extraído, para pegar erros de leitura.
+ * Devolve [{ ok: boolean, msg }].
+ */
+export function checkReport(report) {
+  const out = [];
+  const active = report.assets.filter((a) => a.rec !== 'VENDER');
+  const sum = active.reduce((s, a) => s + a.weight, 0);
+  out.push(Math.abs(sum - 1) <= 0.02
+    ? { ok: true, msg: `Pesos somam ${(sum * 100).toFixed(1)}% (${active.length} ativos).` }
+    : { ok: false, msg: `Pesos somam ${(sum * 100).toFixed(1)}% — deveria dar perto de 100%. Algum ativo ou peso pode ter sido lido errado.` });
+  const noPrice = report.assets.filter((a) => !a.price).map((a) => a.ticker);
+  const noCeil = report.assets.filter((a) => !a.ceiling).map((a) => a.ticker);
+  out.push(noPrice.length ? { ok: false, msg: `Sem preço: ${noPrice.join(', ')}.` } : { ok: true, msg: 'Todos os ativos têm preço.' });
+  out.push(noCeil.length ? { ok: false, msg: `Sem preço teto/justo: ${noCeil.join(', ')}.` } : { ok: true, msg: 'Todos os ativos têm preço teto/justo.' });
+  const weird = report.assets.filter((a) => { const u = upside(a); return u !== null && Math.abs(u) > 0.8; }).map((a) => a.ticker);
+  if (weird.length) out.push({ ok: false, msg: `Preço e teto muito distantes (mais de 80%): ${weird.join(', ')} — confira na página.` });
+  const highDy = report.assets.filter((a) => a.dy !== null && a.dy > 0.3).map((a) => a.ticker);
+  if (highDy.length) out.push({ ok: false, msg: `DY acima de 30%: ${highDy.join(', ')} — confira.` });
+  const fmt = report.type === 'internacional' ? /^[A-Z][A-Z.-]{0,6}$/ : /^[A-Z]{4}\d{1,2}$/;
+  const badTk = report.assets.filter((a) => !fmt.test(a.ticker)).map((a) => a.ticker);
+  if (badTk.length) out.push({ ok: false, msg: `Código com formato estranho: ${badTk.join(', ')}.` });
+  const noPage = report.assets.filter((a) => !a.page).map((a) => a.ticker);
+  if (report.tablePages?.length || report.assets.some((a) => a.page)) {
+    out.push(noPage.length ? { ok: false, msg: `A IA não indicou a página de: ${noPage.join(', ')}.` } : { ok: true, msg: `Todos os ativos localizados na página ${[...new Set(report.assets.map((a) => a.page))].join(', ')}.` });
+  }
+  return out;
 }

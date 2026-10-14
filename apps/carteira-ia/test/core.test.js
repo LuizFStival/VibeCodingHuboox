@@ -150,7 +150,10 @@ test('serviço: extrai com Gemini fake, analisa em lotes, importa carteira e pla
   };
   const r = await svc.extractReport(fake, { images: [{ mimeType: 'image/jpeg', data: 'AA==' }], type: 'acoes', month: '2026-10', filename: 'a.pdf' });
   assert.equal(r.id, '2026-10:acoes');
-  assert.equal(calls[0].parts[1].inlineData.mimeType, 'image/jpeg');
+  assert.equal(calls[0].parts[1].text, 'Página 1');
+  assert.equal(calls[0].parts[2].inlineData.mimeType, 'image/jpeg');
+  assert.equal(calls[0].fast, true);
+  assert.equal(calls[0].parallel, true);
   assert.deepEqual(svc.months(), ['2026-10']);
 
   const progress = [];
@@ -348,4 +351,41 @@ test('modo manual: pedido pronto, resposta colada do chat e pedido só dos que f
 
   assert.throws(() => svc.importManualAnalysis(id, 'não sei responder'), /JSON/);
   assert.throws(() => svc.importManualAnalysis(id, '{"ativos":[{"ticker":"XPTO3"}]}'), /nenhum ativo/);
+});
+
+// ---------------------------------------------------------------- conferência e velocidade
+
+import { checkReport } from '../public/core/report.js';
+import { thinkingFor } from '../public/core/gemini.js';
+
+test('conferência aponta pesos que não fecham, preço faltando e página não indicada', () => {
+  const ok = normalizeReport({ tablePages: [4], assets: [
+    { ticker: 'AAAA3', allocationPct: 60, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR', page: 4 },
+    { ticker: 'BBBB3', allocationPct: 40, price: 20, ceilingPrice: 22, recommendation: 'AGUARDAR', page: 4 },
+  ] }, { type: 'acoes', month: '2026-10' });
+  assert.ok(checkReport(ok).every((c) => c.ok), JSON.stringify(checkReport(ok)));
+  const bad = normalizeReport({ tablePages: [4], assets: [
+    { ticker: 'AAAA3', allocationPct: 60, price: 10, ceilingPrice: 30, recommendation: 'COMPRAR', page: 4 },
+    { ticker: 'BBBB3', allocationPct: 20, ceilingPrice: 22, recommendation: 'COMPRAR' },
+  ] }, { type: 'acoes', month: '2026-10' });
+  const msgs = checkReport(bad).filter((c) => !c.ok).map((c) => c.msg).join(' | ');
+  assert.match(msgs, /somam 80\.0%/);
+  assert.match(msgs, /Sem preço: BBBB3/);
+  assert.match(msgs, /muito distantes.*AAAA3/);
+  assert.match(msgs, /página de: BBBB3/);
+});
+
+test('leitura rápida: pouco raciocínio, fora da fila, e tenta de novo se o modelo recusar o ajuste', async () => {
+  assert.deepEqual(thinkingFor('gemini-2.5-flash'), { thinkingBudget: 0 });
+  assert.deepEqual(thinkingFor('gemini-flash-latest'), { thinkingLevel: 'low' });
+  const bodies = [];
+  const g = createGemini({ apiKey: 'k', model: 'gemini-flash-latest', minIntervalMs: 60_000, sleep: async () => { throw new Error('não deveria esperar'); }, fetch: async (url, init) => {
+    const b = JSON.parse(init.body); bodies.push(b);
+    if (b.generationConfig.thinkingConfig) return errBody(400, { message: 'Unknown name "thinkingLevel" at generation_config.thinking_config' });
+    return okBody('{"ok":1}');
+  } });
+  const res = await g.generate({ parts: [{ text: 'x' }], fast: true, parallel: true });
+  assert.deepEqual(res.json(), { ok: 1 });
+  assert.equal(bodies.length, 2);
+  assert.ok(!bodies[1].generationConfig.thinkingConfig);
 });

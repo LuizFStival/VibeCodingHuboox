@@ -107,6 +107,13 @@ export function toGeminiError(status, payload, model, { search = false } = {}) {
   return new GeminiError(`Gemini (${status}): ${msg}`, { status, raw: msg });
 }
 
+/** Menor raciocínio aceito por cada família de modelo. */
+export function thinkingFor(model) {
+  if (/gemini-2\.5-pro/.test(model)) return { thinkingBudget: 128 };
+  if (/gemini-2\.5/.test(model)) return { thinkingBudget: 0 };
+  return { thinkingLevel: 'low' };
+}
+
 // Fila compartilhada por todos os clientes da página: uma requisição por vez.
 let queue = Promise.resolve();
 let lastStart = 0;
@@ -146,8 +153,13 @@ export function createGemini({
    * O Gemini 2.5 não aceita schema + search juntos, então com search o JSON vem no texto.
    * onRetry(msg): avisa a interface quando está esperando para tentar de novo.
    */
-  function generate({ parts, system, schema, search = false, temperature = 0.2, signal, onRetry }) {
+  /**
+   * fast: desliga/reduz o "raciocínio" do modelo (bom para extração, que é cópia de dados).
+   * parallel: não entra na fila (usado na leitura dos PDFs, que são poucas chamadas grandes).
+   */
+  function generate({ parts, system, schema, search = false, temperature = 0.2, signal, onRetry, fast = false, parallel = false }) {
     const body = { contents: [{ role: 'user', parts }], generationConfig: { temperature } };
+    if (fast) body.generationConfig.thinkingConfig = thinkingFor(model);
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     if (schema && !search) Object.assign(body.generationConfig, { responseMimeType: 'application/json', responseSchema: schema });
     if (search) body.tools = [{ google_search: {} }];
@@ -155,12 +167,20 @@ export function createGemini({
     let switched = false;
     const run = async () => {
       for (let attempt = 0; ; attempt++) {
-        const wait = lastStart + minIntervalMs - Date.now();
-        if (wait > 0) await sleep(wait, signal);
-        lastStart = Date.now();
+        if (!parallel) {
+          const wait = lastStart + minIntervalMs - Date.now();
+          if (wait > 0) await sleep(wait, signal);
+          lastStart = Date.now();
+        }
         try {
           return parse(await once(body, signal), search);
         } catch (e) {
+          if (body.generationConfig.thinkingConfig && e.status === 400 && /thinking/i.test(e.raw || e.message)) {
+            // Modelo não aceita esse ajuste de raciocínio: tenta de novo sem ele.
+            delete body.generationConfig.thinkingConfig;
+            attempt--;
+            continue;
+          }
           if (e.modelUnavailable && !switched) {
             // Modelo desativado: troca pelo recomendado (ou o Flash atual da chave) e repete.
             switched = true;
@@ -182,6 +202,7 @@ export function createGemini({
         }
       }
     };
+    if (parallel) return run();
     const p = queue.then(run, run);
     queue = p.catch(() => {});
     return p;

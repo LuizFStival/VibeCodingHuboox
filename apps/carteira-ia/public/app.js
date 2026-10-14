@@ -5,7 +5,9 @@
 import { createService } from './core/service.js';
 import { createStore, memoryStorage } from './core/store.js';
 import { createGemini, DEFAULT_MODEL, MODEL_OPTIONS, usefulModels, pickModel } from './core/gemini.js';
-import { ASSET_TYPES, TYPE_IDS, detectMonth, detectType, reportStats, upside } from './core/report.js';
+import { ASSET_TYPES, TYPE_IDS, detectMonth, detectType, reportStats, upside, checkReport } from './core/report.js';
+
+const FAST_PAGES = 8; // leitura rápida: tabela, resumo, mudanças e desempenho ficam no começo
 import { VERDICTS } from './core/prompts.js';
 
 let storage;
@@ -26,6 +28,7 @@ const state = {
   anFilter: 'all',
   anSkip: new Set(),    // carteiras desmarcadas na aba de análise
   manualText: {},       // respostas coladas (modo manual), por relatório
+  showPages: new Set(), // relatórios com a página original aberta
   aporte: 1000,
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
   busy: false,
@@ -248,7 +251,7 @@ function reportDetail(r, analyses) {
     if (open) {
       body.append(h('tr', { class: 'detail' }, h('td', { colspan: cols.length },
         h('div', { class: 'stack' },
-          a.strategy ? h('span', { class: 'small muted' }, `Estratégia: ${a.strategy}`) : null,
+          h('span', { class: 'small muted' }, [a.strategy ? `Estratégia: ${a.strategy}` : '', a.page ? `lido na página ${a.page} do PDF` : ''].filter(Boolean).join(' · ')),
           h('p', { class: 'prose' }, a.thesis || 'O relatório não traz tese para este ativo.'),
           ai ? h('div', { class: 'stack' }, h('div', { class: 'row' }, h('b', {}, 'Leitura da IA'), verdictBadge(ai.verdict), h('span', { class: 'small muted' }, `sugere ${REC_LABEL[ai.aiRec]}`)), h('p', { class: 'prose' }, ai.summary)) : null))));
     }
@@ -256,7 +259,29 @@ function reportDetail(r, analyses) {
   const table = card('Carteira em detalhes', h('span', { class: 'muted small' }, 'clique numa linha para ver a tese'),
     h('div', { class: 'table-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, cols.map((c) => h('th', {}, c)))), body)));
 
-  return [head, kpis, changes, charts, table].filter(Boolean);
+  return [head, verifyCard(r), kpis, changes, charts, table].filter(Boolean);
+}
+
+/** Conferência da leitura: verificações automáticas + a página original da tabela. */
+function verifyCard(r) {
+  const checks = checkReport(r);
+  const bad = checks.filter((c) => !c.ok).length;
+  const ex = r.extraction;
+  const pages = state.showPages.has(r.id) ? svc.tablePages(r.id) : [];
+  const where = r.tablePages?.length ? `tabela na página ${r.tablePages.join(', ')}` : '';
+  return h('div', { class: 'card' },
+    h('div', { class: 'card-head' },
+      h('h2', {}, bad ? `Conferir a leitura · ${bad} ponto(s) de atenção` : 'Conferir a leitura · tudo certo'),
+      ex ? h('button', { class: 'btn small', type: 'button', onclick: () => { state.showPages.has(r.id) ? state.showPages.delete(r.id) : state.showPages.add(r.id); render(); } }, state.showPages.has(r.id) ? 'Esconder página' : 'Ver página original da tabela') : null),
+    h('p', { class: 'muted small', style: { 'margin-bottom': '8px' } }, ex
+      ? `Lido do PDF pelo ${ex.model} em ${ex.seconds} s · ${ex.pagesSent} de ${ex.pagesTotal} páginas enviadas${where ? ` · ${where}` : ''}${ex.edited ? ' · corrigido à mão' : ''}.`
+      : 'Importado de um arquivo .json (não veio da leitura de um PDF).'),
+    h('ul', { class: 'alert-list' }, checks.map((c) => h('li', { class: c.ok ? 'falta' : 'preco' }, `${c.ok ? '✓' : '!'} ${c.msg}`))),
+    pages.length ? h('div', { class: 'page-shots' }, pages.map((pg) => h('figure', {},
+      h('img', { src: `data:${pg.mimeType};base64,${pg.data}`, alt: `Página ${pg.page} do PDF`, loading: 'lazy' }),
+      h('figcaption', { class: 'muted small' }, `Página ${pg.page} do PDF original — compare com a tabela abaixo.`)))) : null,
+    state.showPages.has(r.id) && !pages.length ? h('p', { class: 'muted small' }, 'A imagem da página não foi guardada (espaço do navegador cheio).') : null,
+    bad ? h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Achou diferença? Use "Corrigir dados" no topo para ajustar.') : null);
 }
 
 function editReport(r) {
@@ -728,11 +753,28 @@ $('#uploadDialog').addEventListener('close', async () => {
     }
     const label = `${ASSET_TYPES[p.type].label} · ${monthLong(p.month)}`;
     const j = job(`${label}: preparando o PDF…`);
+    const t0 = Date.now();
+    const read = async (maxPages) => {
+      const { images, pages } = await pdfToImages(p.file, { maxPages, onPage: (n, total) => j.update(`${label}: convertendo página ${n}/${total}`, (n / total) * 0.3) });
+      j.update(`${label}: a IA está lendo ${images.length} de ${pages} páginas…`, 0.4);
+      return svc.extractReport(gemini(), { images, pagesTotal: pages, type: p.type, month: p.month, filename: p.file.name, onStatus: (m) => j.update(`${label}: ${m}`) });
+    };
     try {
-      const { images, pages, truncated } = await pdfToImages(p.file, { onPage: (n, total) => j.update(`${label}: convertendo página ${n}/${total}`, (n / total) * 0.3) });
-      j.update(`${label}: a IA está lendo ${images.length} páginas${truncated ? ` (de ${pages})` : ''}…`, 0.4);
-      const res = await svc.extractReport(gemini(), { images, type: p.type, month: p.month, filename: p.file.name, onStatus: (m) => j.update(`${label}: ${m}`) });
-      j.done(`${label}: ${res.report.assets.length} ativos extraídos${res.replaced ? ' (substituiu o anterior)' : ''}.`);
+      let res;
+      const full = $('#uploadFull').checked;
+      try {
+        res = await read(full ? undefined : FAST_PAGES);
+      } catch (e) {
+        if (full || !/Nenhum ativo/.test(e.message)) throw e;
+        res = null;
+      }
+      // Leitura rápida não achou a tabela (ou os pesos não fecham): lê o PDF inteiro.
+      if (!full && (!res || !checkReport(res.report)[0].ok)) {
+        j.update(`${label}: a tabela não fechou nas primeiras páginas — lendo o PDF inteiro…`, 0.5);
+        res = await read(undefined);
+      }
+      const bad = checkReport(res.report).filter((c) => !c.ok).length;
+      j.done(`${label}: ${res.report.assets.length} ativos em ${Math.round((Date.now() - t0) / 1000)} s${bad ? ` · ${bad} ponto(s) para conferir` : ' · conferência ok'}${res.replaced ? ' (substituiu o anterior)' : ''}.`);
       lastMonth = p.month; lastType = p.type;
     } catch (e) {
       j.fail(`${label}: ${e.message}`);

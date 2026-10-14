@@ -36,10 +36,12 @@ export const EXTRACTION_SCHEMA = S('OBJECT', {
           pvp: S('NUMBER', { nullable: true }),
           recommendation: S('STRING', { enum: ['COMPRAR', 'AGUARDAR', 'MANTER', 'VENDER'] }),
           thesis: S('STRING', { description: 'Resumo da tese/descrição do ativo no relatório (2 a 4 frases), se houver' }),
+          page: S('NUMBER', { description: 'Número da página (rótulo "Página N") onde está a linha deste ativo na tabela' }),
         },
         required: ['ticker', 'allocationPct', 'recommendation'],
       }),
     }),
+    tablePages: S('ARRAY', { items: S('NUMBER'), description: 'Números das páginas onde está a tabela "Carteira em detalhes"' }),
     performance: S('OBJECT', {
       properties: {
         period: S('STRING', { description: 'Período da análise de rentabilidade' }),
@@ -64,7 +66,8 @@ export function extractionPrompt(type) {
     '- Inclua ativos com recomendação de venda (peso 0) e cite-os em "changes".',
     '- Para a tese de cada ativo, use as páginas de descrição do próprio relatório; resuma em português.',
     '- Ignore marcas d\'água e qualquer dado pessoal (nome, e-mail, CPF de assinante). Nunca os reproduza.',
-    '- Não invente valores: se não estiver no relatório, use null.',
+    '- Cada imagem vem depois de um rótulo "Página N". Informe em "page" a página onde achou cada ativo e em "tablePages" as páginas da tabela.',
+    '- Não invente valores: se não estiver no relatório, use null. Copie os números exatamente como estão na tabela.',
   ].join('\n');
 }
 

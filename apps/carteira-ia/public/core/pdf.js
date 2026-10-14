@@ -16,10 +16,10 @@ async function lib() {
 }
 
 /** file: File/Blob. Devolve [{ mimeType, data }] (base64) e o total de páginas. */
-export async function pdfToImages(file, { onPage } = {}) {
+export async function pdfToImages(file, { onPage, maxPages = MAX_PAGES } = {}) {
   const { getDocument } = await lib();
   const doc = await getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
-  const pages = Math.min(doc.numPages, MAX_PAGES);
+  const pages = Math.min(doc.numPages, maxPages, MAX_PAGES);
   const images = [];
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -38,5 +38,5 @@ export async function pdfToImages(file, { onPage } = {}) {
     page.cleanup();
   }
   await doc.destroy();
-  return { images, pages: doc.numPages, truncated: doc.numPages > MAX_PAGES };
+  return { images, pages: doc.numPages, truncated: doc.numPages > pages };
 }

@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from './portfolio.js';
 
 export const STORAGE_KEY = 'carteira-ia:v1';
 export const API_KEY_KEY = 'carteira-ia:gemini-key';
+const PAGES_PREFIX = 'carteira-ia:pages:';
 const SCHEMA_VERSION = 1;
 
 export const emptyData = () => ({
@@ -61,6 +62,15 @@ export function createStore(storage) {
       storage.setItem(STORAGE_KEY, JSON.stringify(validated));
       data = validated;
     },
+
+    /** Imagens das páginas da tabela (para conferir a leitura). Separadas e opcionais: se não couber, só não guarda. */
+    savePages(id, pages) {
+      try { storage.setItem(`${PAGES_PREFIX}${id}`, JSON.stringify(pages)); return true; } catch { return false; }
+    },
+    pages(id) {
+      try { return JSON.parse(storage.getItem(`${PAGES_PREFIX}${id}`) ?? '[]'); } catch { return []; }
+    },
+    removePages(id) { try { storage.removeItem?.(`${PAGES_PREFIX}${id}`); } catch { /* ignora */ } },
 
     get apiKey() { try { return storage.getItem(API_KEY_KEY) ?? ''; } catch { return ''; } },
     set apiKey(v) { if (v) storage.setItem(API_KEY_KEY, v); else storage.removeItem?.(API_KEY_KEY); },

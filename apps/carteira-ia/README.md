@@ -36,6 +36,11 @@ Crie uma chave gratuita em [aistudio.google.com/apikey](https://aistudio.google.
 
 Cada mês fica separado (seletor no topo), o que mantém o histórico de relatórios.
 
+## Conferir a leitura do PDF e velocidade
+
+- Cada página vai para a IA com o rótulo "Página N"; ela informa em que página achou cada ativo. O app guarda a imagem da página da tabela e mostra, no topo de cada carteira, o cartão **Conferir a leitura**: modelo usado, tempo, páginas enviadas, verificações automáticas (pesos somam ~100%, preços e tetos presentes, valores fora do normal, códigos estranhos) e o botão **Ver página original da tabela** para comparar com o que foi extraído.
+- **Leitura rápida (padrão):** só as 8 primeiras páginas (tabela, resumo, mudanças e desempenho), com o raciocínio do modelo reduzido e os PDFs lidos em paralelo. Se a tabela não fechar nessas páginas, o app lê o PDF inteiro automaticamente. **Leitura completa** (opção ao subir) inclui a tese de cada ativo.
+
 ## Limites da API e erros
 
 O plano gratuito do Gemini tem limites baixos de requisições por minuto e por dia, e a análise faz cerca de uma chamada a cada 5 ativos. Para não estourar:

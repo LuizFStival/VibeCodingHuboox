@@ -258,3 +258,6 @@ dialog::backdrop { background: rgb(0 0 0 / .4); }
 .manual-row { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
 .manual-row textarea { min-height: 70px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+.page-shots { display: grid; gap: 12px; margin-top: 12px; }
+.page-shots figure { margin: 0; display: grid; gap: 4px; }
+.page-shots img { width: 100%; max-width: 900px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }

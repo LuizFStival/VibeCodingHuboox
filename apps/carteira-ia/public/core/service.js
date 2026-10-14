@@ -28,6 +28,7 @@ export function createService(store) {
       const replaced = data.reports.some((r) => r.id === id);
       data.reports = data.reports.filter((r) => r.id !== id);
       data.reports.push({ id, filename, importedAt: new Date().toISOString(), ...normalized });
+      if (!normalized.extraction) store.removePages?.(id);
       // A análise antiga se refere a outros dados: descarta só os tickers que saíram.
       const an = data.analyses[id];
       if (an) for (const t of Object.keys(an.items)) if (!normalized.assets.some((a) => a.ticker === t)) delete an.items[t];
@@ -44,18 +45,33 @@ export function createService(store) {
     analysis: (id) => d().analyses[id] ?? null,
     analysesFor,
 
-    /** images: [{ mimeType, data(base64) }] das páginas do PDF. */
-    async extractReport(gemini, { images, type, month, filename, signal, onStatus }) {
+    /**
+     * images: [{ mimeType, data(base64) }] das páginas do PDF, na ordem (página 1, 2, …).
+     * Cada imagem vai com o rótulo "Página N" para a IA dizer onde achou cada ativo;
+     * as páginas da tabela ficam guardadas para conferência.
+     */
+    async extractReport(gemini, { images, type, month, filename, signal, onStatus, pagesTotal }) {
+      const t0 = Date.now();
       const res = await gemini.generate({
-        parts: [{ text: extractionPrompt(type) }, ...images.map((img) => ({ inlineData: img }))],
+        parts: [{ text: extractionPrompt(type) }, ...images.flatMap((img, i) => [{ text: `Página ${i + 1}` }, { inlineData: img }])],
         schema: EXTRACTION_SCHEMA,
         temperature: 0,
+        fast: true,
+        parallel: true,
         signal,
         onRetry: onStatus,
       });
       const normalized = normalizeReport(res.json(), { type, month });
-      return { ...saveReport(normalized, { filename }), report: normalized };
+      normalized.extraction = {
+        model: gemini.model, seconds: Math.round((Date.now() - t0) / 1000),
+        pagesSent: images.length, pagesTotal: pagesTotal ?? images.length, at: new Date().toISOString(),
+      };
+      const saved = saveReport(normalized, { filename });
+      const wanted = [...new Set([...normalized.tablePages, ...normalized.assets.map((a) => a.page)].filter((n) => n && n <= images.length))].slice(0, 2);
+      store.savePages(saved.id, wanted.map((n) => ({ page: n, mimeType: images[n - 1].mimeType, data: images[n - 1].data })));
+      return { ...saved, report: normalized };
     },
+    tablePages: (id) => store.pages(id),
 
     importReportJson(json, { filename = 'importado.json' } = {}) {
       const items = Array.isArray(json) ? json : Array.isArray(json?.reports) ? json.reports : [json];
@@ -65,7 +81,9 @@ export function createService(store) {
     updateReport(id, raw) {
       const cur = this.report(id);
       if (!cur) throw new Error('Relatório não encontrado.');
-      return saveReport(normalizeReport(raw, { type: cur.type, month: cur.month }), { filename: cur.filename });
+      const normalized = normalizeReport(raw, { type: cur.type, month: cur.month });
+      if (cur.extraction) normalized.extraction = { ...cur.extraction, edited: true }; // mantém o registro da leitura e as páginas
+      return saveReport(normalized, { filename: cur.filename });
     },
 
     removeReport(id) {
@@ -73,6 +91,7 @@ export function createService(store) {
         data.reports = data.reports.filter((r) => r.id !== id);
         delete data.analyses[id];
       });
+      store.removePages(id);
     },
 
     /**
