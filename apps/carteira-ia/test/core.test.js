@@ -312,3 +312,40 @@ test('análise segue sem pesquisa quando a chave não tem cota de pesquisa', asy
   assert.equal(svc.analysis(id).items.FFFF3.searched, false);
   assert.match(res.errors[0], /sem pesquisa na web/);
 });
+
+// ---------------------------------------------------------------- modo manual (copiar e colar)
+
+test('modo manual: pedido pronto, resposta colada do chat e pedido só dos que faltam', () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  svc.importReportJson({ ...fixture('acoes.json'), type: 'acoes', month: '2026-10' });
+  const id = '2026-10:acoes';
+  const first = svc.manualPrompt(id);
+  assert.equal(first.count, 5);
+  assert.match(first.prompt, /PESQUISE NA WEB/);
+  assert.match(first.prompt, /AAAA3/);
+
+  // Resposta típica de chat: texto em volta + bloco ```json, faltando dois ativos.
+  const pasted = 'Claro! Segue a análise:\n```json\n' + JSON.stringify({ visaoGeral: 'ok', ativos: [
+    { ticker: 'AAAA3', veredito: 'DISCORDA', recomendacaoIA: 'AGUARDAR', resumo: 'caro', fontes: ['https://exemplo.com/a', 'javascript:alert(1)'] },
+    { ticker: 'BBBB3', veredito: 'CONCORDA', resumo: 'ok' },
+    { ticker: 'CCCC3', veredito: 'PARCIAL', resumo: 'ok' },
+    { ticker: 'ZZZZ9', veredito: 'CONCORDA', resumo: 'de outra carteira' },
+  ] }) + '\n```\nEspero ter ajudado.';
+  const res = svc.importManualAnalysis(id, pasted);
+  assert.equal(res.count, 3);
+  assert.deepEqual(res.pending, ['DDDD3', 'EEEE3']);
+  const a = svc.analysis(id).items.AAAA3;
+  assert.equal(a.verdict, 'DISCORDA');
+  assert.deepEqual(a.sources.map((s) => s.uri), ['https://exemplo.com/a']);
+  assert.equal(a.manual, true);
+
+  const second = svc.manualPrompt(id);
+  assert.equal(second.count, 2);
+  assert.ok(second.prompt.includes('DDDD3') && !second.prompt.includes('"AAAA3"'));
+  svc.importManualAnalysis(id, JSON.stringify([{ ticker: 'DDDD3', veredito: 'CONCORDA', resumo: 'x' }, { ticker: 'EEEE3', veredito: 'CONCORDA', resumo: 'x' }]));
+  assert.deepEqual(svc.analysis(id).pending, []);
+  assert.equal(Object.keys(svc.analysis(id).items).length, 5);
+
+  assert.throws(() => svc.importManualAnalysis(id, 'não sei responder'), /JSON/);
+  assert.throws(() => svc.importManualAnalysis(id, '{"ativos":[{"ticker":"XPTO3"}]}'), /nenhum ativo/);
+});

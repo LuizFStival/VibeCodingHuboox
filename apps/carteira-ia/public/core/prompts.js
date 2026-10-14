@@ -111,6 +111,38 @@ export function analysisPrompt(report, assets, today) {
   ].filter(Boolean).join('\n');
 }
 
+/**
+ * Versão para colar no Gemini/ChatGPT do site (que pesquisam na web de graça).
+ * Pede respostas curtas (chats cortam respostas longas) e as fontes de cada ativo.
+ */
+export function manualAnalysisPrompt(report, assets, today) {
+  const t = ASSET_TYPES[report.type];
+  const rows = assets.map((a) => ({
+    ticker: a.ticker, nome: a.name, peso: +(a.weight * 100).toFixed(2), recomendacao: a.rec,
+    preco: a.price, precoTeto: a.ceiling, dy: a.dy === null ? null : +(a.dy * 100).toFixed(2),
+  }));
+  return [
+    `Hoje é ${today}. Aja como analista independente de investimentos (${t.label}). Revise a carteira recomendada de ${report.provider || 'uma casa de análise'} de ${report.month}.`,
+    report.summary ? `Contexto do relatório: ${report.summary}` : '',
+    `Ativos (dados do relatório, preços em ${t.currency}):`,
+    JSON.stringify(rows),
+    '',
+    `PESQUISE NA WEB dados atuais de CADA ativo: ${FOCUS[report.type]}`,
+    'Para cada ativo diga se concorda com a recomendação do relatório e por quê, com números e datas.',
+    'Seja breve para caber tudo: no máximo 3 fundamentos, 2 notícias e 2 riscos por ativo.',
+    `Responda com UM ÚNICO bloco de código JSON (sem texto fora dele), com os ${assets.length} ativos, neste formato:`,
+    JSON.stringify({
+      visaoGeral: 'parágrafo curto sobre o cenário atual',
+      ativos: [{
+        ticker: 'TICKER', veredito: 'CONCORDA | PARCIAL | DISCORDA', recomendacaoIA: 'COMPRAR | AGUARDAR | MANTER | VENDER',
+        precoAtual: 0, resumo: '2 a 3 frases', fundamentos: ['indicador: valor (período)'],
+        noticias: [{ titulo: '...', data: 'AAAA-MM-DD', impacto: 'positivo | negativo | neutro' }],
+        riscos: ['...'], confianca: 'alta | media | baixa', fontes: ['https://...'],
+      }],
+    }),
+  ].filter(Boolean).join('\n');
+}
+
 // Mesmo formato do analysisPrompt, como schema — usado quando a resposta com pesquisa
 // vem em texto livre e precisa ser estruturada numa segunda chamada (sem pesquisa).
 export const ANALYSIS_SCHEMA = S('OBJECT', {
@@ -145,6 +177,7 @@ export function structurePrompt(text, tickers) {
   ].join('\n');
 }
 
+const safeHttpUrl = (u) => { try { const x = new URL(String(u)); return /^https?:$/.test(x.protocol) ? x.href : null; } catch { return null; } };
 const str = (v, max = 600) => (v === null || v === undefined ? '' : String(v).trim().slice(0, max));
 const arr = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
 
@@ -177,7 +210,7 @@ export function normalizeAnalysis(raw, tickers, sources = []) {
       })).filter((n) => n.title),
       risks: arr(a.riscos, 6).map((x) => str(x, 240)).filter(Boolean),
       confidence: conf.startsWith('a') ? 'alta' : conf.startsWith('b') ? 'baixa' : 'media',
-      sources: sources.slice(0, 8),
+      sources: (sources.length ? sources : arr(a.fontes, 8).map((u) => ({ uri: safeHttpUrl(u?.url ?? u), title: '' })).filter((x) => x.uri)).slice(0, 8),
     };
   }
   return { overview: str(raw?.visaoGeral, 1500), items };

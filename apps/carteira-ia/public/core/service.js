@@ -2,7 +2,8 @@
 // O cliente do Gemini é passado de fora (createGemini), o que permite testar com um fake.
 
 import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber } from './report.js';
-import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, analysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
+import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, analysisPrompt, manualAnalysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
+import { parseJsonLoose } from './gemini.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
 
 const CHUNK = 5; // ativos por chamada de análise (respostas menores = menos cortes)
@@ -154,6 +155,41 @@ export function createService(store) {
       return result;
     },
 
+    // ---------------- modo manual (copiar e colar no Gemini/ChatGPT do site)
+
+    /** Pedido pronto para colar num chat com pesquisa na web. Por padrão, só os ativos que faltam. */
+    manualPrompt(id, { all = false } = {}) {
+      const report = this.report(id);
+      if (!report) throw new Error('Relatório não encontrado.');
+      const done = d().analyses[id]?.items ?? {};
+      const assets = all ? report.assets : report.assets.filter((a) => !done[a.ticker]);
+      return { prompt: manualAnalysisPrompt(report, assets.length ? assets : report.assets, todayISO()), count: assets.length || report.assets.length };
+    },
+
+    /** Lê a resposta colada (JSON, com ou sem ```), junta à análise e diz o que faltou. */
+    importManualAnalysis(id, text) {
+      const report = this.report(id);
+      if (!report) throw new Error('Relatório não encontrado.');
+      let raw;
+      try { raw = parseJsonLoose(text); } catch (e) { throw new Error(`Não encontrei o JSON na resposta colada (${e.message}) Copie a resposta inteira do chat, incluindo o bloco de código.`); }
+      if (Array.isArray(raw)) raw = { ativos: raw };
+      const norm = normalizeAnalysis(raw, report.assets.map((a) => a.ticker));
+      const got = Object.keys(norm.items);
+      if (!got.length) throw new Error('A resposta não tem nenhum ativo desta carteira (confira se colou a carteira certa).');
+      for (const it of Object.values(norm.items)) { it.searched = true; it.manual = true; }
+      store.update((data) => {
+        const prev = data.analyses[id];
+        const items = { ...(prev?.items ?? {}), ...norm.items };
+        data.analyses[id] = {
+          at: new Date().toISOString(), model: 'manual (chat com pesquisa)',
+          overview: norm.overview || prev?.overview || '',
+          items, errors: [],
+          pending: report.assets.filter((a) => !items[a.ticker]).map((a) => a.ticker),
+        };
+      });
+      return { count: got.length, pending: d().analyses[id].pending };
+    },
+
     // ---------------- carteira do usuário
     holdings: () => d().holdings,
 
@@ -208,6 +244,9 @@ export function createService(store) {
     },
     plan(month, amount) {
       return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: d().settings });
+    },
+    reviewPrompt(month, plan) {
+      return aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() });
     },
     async reviewPlan(gemini, month, plan, { signal, onStatus } = {}) {
       const parts = [{ text: aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() }) }];

@@ -25,6 +25,7 @@ const state = {
   expanded: new Set(),  // linhas abertas na tabela
   anFilter: 'all',
   anSkip: new Set(),    // carteiras desmarcadas na aba de análise
+  manualText: {},       // respostas coladas (modo manual), por relatório
   aporte: 1000,
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
   busy: false,
@@ -311,23 +312,80 @@ async function runAnalysis(ids, only = {}) {
   }
 }
 
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* sem permissão: usa o método antigo */ }
+  const ta = h('textarea', { style: { position: 'fixed', opacity: '0' } });
+  ta.value = text; document.body.append(ta); ta.select();
+  const ok = document.execCommand('copy'); ta.remove();
+  return ok;
+}
+
+const CHAT_LINKS = [['Abrir Gemini', 'https://gemini.google.com/app'], ['Abrir ChatGPT', 'https://chatgpt.com/']];
+
+/** Uma carteira no modo manual: 1) copiar pedido 2) colar no chat 3) colar a resposta aqui. */
+function manualRow(r) {
+  const an = svc.analysis(r.id);
+  const done = an ? r.assets.filter((a) => an.items[a.ticker]).length : 0;
+  const missing = r.assets.length - done;
+  const paste = h('textarea', { rows: 4, placeholder: 'Cole aqui a resposta do chat (o bloco JSON inteiro)…', oninput: (e) => { state.manualText[r.id] = e.target.value; } });
+  paste.value = state.manualText[r.id] ?? '';
+  const copy = async (all) => {
+    const { prompt, count } = svc.manualPrompt(r.id, { all });
+    toast(await copyText(prompt) ? `Pedido de ${count} ativo(s) copiado. Cole no Gemini ou ChatGPT.` : 'Não consegui copiar — selecione o texto manualmente.', false);
+  };
+  return h('div', { class: 'manual-row' },
+    h('div', { class: 'row' },
+      h('b', {}, h('span', { class: `dot type-${r.type}` }), ASSET_TYPES[r.type].label),
+      h('span', { class: `badge ${missing ? 'rec-AGUARDAR' : 'rec-COMPRAR'}` }, `${done}/${r.assets.length} analisados`),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn small primary', type: 'button', onclick: () => copy(false) }, missing && done ? `1 · Copiar pedido (${missing} que faltam)` : '1 · Copiar pedido'),
+      done ? h('button', { class: 'btn small', type: 'button', onclick: () => copy(true), title: 'Pedir de novo todos os ativos' }, 'Refazer todos') : null,
+      CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
+    paste,
+    h('div', { class: 'row' },
+      h('button', { class: 'btn small primary', type: 'button', onclick: () => {
+        try {
+          const res = svc.importManualAnalysis(r.id, paste.value);
+          state.manualText[r.id] = '';
+          toast(`${ASSET_TYPES[r.type].label}: ${res.count} ativo(s) importados${res.pending.length ? `. Faltam ${res.pending.length} — copie o pedido de novo para pedir só eles.` : '.'}`);
+          render();
+        } catch (e) { toast(e.message, true); }
+      } }, '2 · Importar resposta'),
+      h('span', { class: 'muted small' }, 'Se o chat cortar a resposta, importe o que veio e copie o pedido de novo: ele pede só os que faltam.')));
+}
+
 function renderAnalysis() {
   if (!state.month) return emptyState();
   const reports = svc.reportsFor(state.month);
   const selected = reports.filter((r) => !state.anSkip.has(r.id)).map((r) => r.id);
   const calls = reports.reduce((s, r) => s + Math.ceil(r.assets.length / 5), 0);
 
-  const controls = card('Revisar as recomendações com o Gemini', null,
+  const mode = svc.settings().analysisMode ?? 'manual';
+  const modeSwitch = h('div', { class: 'row' },
+    [['manual', 'Copiar e colar (grátis, com pesquisa)'], ['api', 'Automático pela API']].map(([k, label]) => h('button', {
+      class: `btn small${mode === k ? ' primary' : ''}`, type: 'button', onclick: () => { svc.updateSettings({ analysisMode: k }); render(); },
+    }, label)));
+
+  const apiControls = [
     h('p', { class: 'muted small', style: { 'margin-bottom': '12px' } },
-      'A IA pesquisa na web (Google Search) notícias, resultados (DRE), indicadores e fatos relevantes de cada ativo e diz se concorda com a recomendação do relatório. ',
-      'Ações: DRE, margens, ROE, endividamento. FIIs: P/VP, DY, vacância, inadimplência, emissões. Internacional: resultados trimestrais, ETFs, juros e câmbio.'),
+      'O app chama a API do Gemini direto. A pesquisa na web pela API exige faturamento ativo no Google AI Studio; sem ele, a análise sai só com o conhecimento do modelo (marcada "sem pesquisa web").'),
     h('div', { class: 'row' },
       reports.map((r) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !state.anSkip.has(r.id), onchange: (e) => { e.target.checked ? state.anSkip.delete(r.id) : state.anSkip.add(r.id); render(); } }),
         `${ASSET_TYPES[r.type].label} (${r.assets.length})`)),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn primary', type: 'button', disabled: state.busy || !reports.length, onclick: () => runAnalysis(selected) }, state.busy ? 'Analisando…' : 'Analisar selecionadas')),
-    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Cerca de ${calls} chamadas à API (5 ativos por chamada), uma por vez para respeitar o limite da sua chave. Pode levar alguns minutos — se a cota acabar no meio, o que já veio fica salvo e dá para continuar depois.`),
-    hasKey() ? null : h('p', { class: 'notice', style: { 'margin-top': '8px' } }, 'Configure a chave da API do Gemini em Configurações.'));
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Cerca de ${calls} chamadas à API (5 ativos por chamada), uma por vez.`),
+    hasKey() ? null : h('p', { class: 'notice', style: { 'margin-top': '8px' } }, 'Configure a chave da API do Gemini em Configurações.'),
+  ];
+
+  const manualControls = [
+    h('p', { class: 'muted small', style: { 'margin-bottom': '12px' } },
+      'O Gemini e o ChatGPT do site (gratuitos) pesquisam na web. O app monta o pedido de cada carteira; você cola lá, copia a resposta e cola aqui. ',
+      'Dica: abra uma conversa nova para cada carteira.'),
+    h('div', { class: 'stack' }, reports.map((r) => manualRow(r))),
+  ];
+
+  const controls = card('Revisar as recomendações com IA', modeSwitch, mode === 'api' ? apiControls : manualControls);
 
   const filter = h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Mostrar:'),
     [['all', 'Todos'], ['DISCORDA', 'Discorda'], ['PARCIAL', 'Em parte'], ['CONCORDA', 'Concorda']].map(([k, label]) => h('button', {
@@ -365,7 +423,8 @@ function analysisCard(a, ai, r) {
     h('div', { class: 'row small' }, 'Relatório:', recBadge(a.rec), '→ IA:', recBadge(ai.aiRec),
       ai.price ? h('span', { class: 'muted' }, `preço ${money(ai.price, cur)}${a.ceiling ? ` · teto ${money(a.ceiling, cur)}` : ''}`) : null,
       h('span', { class: 'muted' }, `confiança ${ai.confidence}`),
-      ai.searched === false ? h('span', { class: 'badge rec-AGUARDAR', title: 'O modelo respondeu sem consultar o Google — pode estar desatualizado' }, 'sem pesquisa web') : null),
+      ai.searched === false ? h('span', { class: 'badge rec-AGUARDAR', title: 'O modelo respondeu sem consultar o Google — pode estar desatualizado' }, 'sem pesquisa web') : null,
+      ai.manual ? h('span', { class: 'badge rec-MANTER', title: 'Resposta colada de um chat com pesquisa na web' }, 'via chat') : null),
     ai.summary ? h('p', { class: 'prose' }, ai.summary) : null,
     list('Fundamentos', ai.fundamentals),
     list('Notícias', ai.news, (n) => h('li', { class: `imp-${n.impact}` }, n.title, n.date ? h('span', { class: 'muted small' }, ` (${n.date})`) : null)),
@@ -507,21 +566,35 @@ function renderAporte() {
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
       h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, state.aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
-  const review = card('Opinião da IA sobre o plano', h('button', {
-    class: 'btn small primary', type: 'button', disabled: !plan.lines.length || state.busy,
-    onclick: async () => {
-      if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); return; }
-      state.busy = true; render();
-      const j = job('Pedindo a opinião da IA sobre o aporte…');
-      try {
-        const res = await svc.reviewPlan(gemini(), state.month, plan, { onStatus: (m) => j.update(m) });
-        state.review = { key: planKey, ...res };
-        j.done('Opinião recebida.');
-      } catch (e) { j.fail(e.message); } finally { state.busy = false; render(); }
-    },
-  }, state.review ? 'Perguntar de novo' : 'Pedir opinião'),
-  state.review ? [renderPlainText(state.review.text), sourceLinks(state.review.sources)] : h('p', { class: 'muted small' }, 'O Gemini pesquisa o momento do mercado e comenta o plano: concentração, momento de cada ativo e ajustes sugeridos.'),
-  h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Ferramenta de apoio. Não é recomendação de investimento — a decisão final é sua.'));
+  const manualMode = (s.analysisMode ?? 'manual') === 'manual';
+  const askApi = async () => {
+    if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); return; }
+    state.busy = true; render();
+    const j = job('Pedindo a opinião da IA sobre o aporte…');
+    try {
+      const res = await svc.reviewPlan(gemini(), state.month, plan, { onStatus: (m) => j.update(m) });
+      state.review = { key: planKey, ...res };
+      j.done('Opinião recebida.');
+    } catch (e) { j.fail(e.message); } finally { state.busy = false; render(); }
+  };
+  const reviewPaste = h('textarea', { rows: 4, placeholder: 'Cole aqui a resposta do chat…' });
+  const manualReview = h('div', { class: 'stack', style: { 'margin-top': '10px' } },
+    h('div', { class: 'row' },
+      h('button', { class: 'btn small primary', type: 'button', disabled: !plan.lines.length, onclick: async () => {
+        toast(await copyText(svc.reviewPrompt(state.month, plan)) ? 'Pedido copiado. Cole no Gemini ou ChatGPT.' : 'Não consegui copiar.');
+      } }, '1 · Copiar pedido'),
+      CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
+    reviewPaste,
+    h('div', { class: 'row' }, h('button', { class: 'btn small primary', type: 'button', onclick: () => {
+      if (!reviewPaste.value.trim()) { toast('Cole a resposta do chat primeiro.', true); return; }
+      state.review = { key: planKey, text: reviewPaste.value.slice(0, 20000), sources: [] }; render();
+    } }, '2 · Mostrar resposta')));
+
+  const review = card('Opinião da IA sobre o plano',
+    manualMode ? h('span', { class: 'muted small' }, 'copiar e colar') : h('button', { class: 'btn small primary', type: 'button', disabled: !plan.lines.length || state.busy, onclick: askApi }, state.review ? 'Perguntar de novo' : 'Pedir opinião'),
+    state.review ? [renderPlainText(state.review.text), sourceLinks(state.review.sources)] : h('p', { class: 'muted small' }, 'A IA pesquisa o momento do mercado e comenta o plano: concentração, momento de cada ativo e ajustes sugeridos.'),
+    manualMode ? manualReview : null,
+    h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Ferramenta de apoio. Não é recomendação de investimento — a decisão final é sua.'));
 
   return [form, kpis, notices, h('div', { class: 'grid two' }, classes, review), lines];
 }
