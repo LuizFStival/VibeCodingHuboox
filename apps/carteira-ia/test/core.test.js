@@ -145,7 +145,7 @@ test('serviço: extrai com Gemini fake, analisa em lotes, importa carteira e pla
       calls.push(req);
       if (req.schema) return { json: () => fixture('acoes.json'), sources: [] };
       const tickers = [...req.parts[0].text.matchAll(/"ticker":"([A-Z0-9]+)"/g)].map((m) => m[1]);
-      return { json: () => ({ visaoGeral: 'cenário', ativos: tickers.map((t) => ({ ticker: t, veredito: t === 'DDDD3' ? 'DISCORDA' : 'CONCORDA' })) }), sources: [{ uri: 'https://n', title: 'n' }] };
+      return { json: () => ({ visaoGeral: 'cenário', ativos: tickers.map((t) => ({ ticker: t, veredito: t === 'DDDD3' ? 'DISCORDA' : 'CONCORDA' })) }), sources: [{ uri: 'https://n', title: 'n' }], searched: true };
     },
   };
   const r = await svc.extractReport(fake, { images: [{ mimeType: 'image/jpeg', data: 'AA==' }], type: 'acoes', month: '2026-10', filename: 'a.pdf' });
@@ -441,4 +441,13 @@ test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo
   assert.ok(plan.warnings.some((w) => /concentrado em 2/.test(w)));
   assert.match(plan.lines[0].reason, /potencial \+\d+% até o teto/);
   assert.ok(plan.invested > 280);
+});
+
+test('veredito da IA sem pesquisa na web não bloqueia o aporte', () => {
+  const st = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, respectAi: true, respectCeiling: false, maxOrders: 0 };
+  const noWeb = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: false } }, settings: st });
+  assert.ok(noWeb.lines.some((l) => l.ticker === 'CCCC3'));
+  assert.ok(noWeb.warnings.some((w) => /sem pesquisa na web.*não bloqueei/.test(w)));
+  const web = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: true } }, settings: st });
+  assert.ok(!web.lines.some((l) => l.ticker === 'CCCC3'));
 });

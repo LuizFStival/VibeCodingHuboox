@@ -145,14 +145,19 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   amount = Math.max(0, Number(amount) || 0);
   const totalAfter = cmp.total + amount;
 
-  const excluded = { ceiling: [], ai: [], noPrice: [] };
+  const excluded = { ceiling: [], ai: [], aiNoWeb: [], noPrice: [] };
   const isEligible = (a) => {
     if (a.weight <= 0) return false;
     const recOk = a.rec === 'COMPRAR' || (settings.includeAguardar && (a.rec === 'AGUARDAR' || a.rec === 'MANTER'));
     if (!recOk) return false;
     const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
     if (!price) { excluded.noPrice.push(a.ticker); return false; }
-    if (settings.respectAi && analyses[a.ticker]?.verdict === 'DISCORDA') { excluded.ai.push(a.ticker); return false; }
+    const an = analyses[a.ticker];
+    if (settings.respectAi && an?.verdict === 'DISCORDA') {
+      // Só bloqueia quem foi avaliado com pesquisa na web; sem dados atuais vira só um aviso.
+      if (an.searched === false) excluded.aiNoWeb.push(a.ticker);
+      else { excluded.ai.push(a.ticker); return false; }
+    }
     if (settings.respectCeiling !== false && a.ceiling && price > a.ceiling) { excluded.ceiling.push(a.ticker); return false; }
     return true;
   };
@@ -239,6 +244,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   });
   if (excluded.ceiling.length) warnings.push(`Em COMPRAR, mas com preço acima do teto (não compra agora): ${excluded.ceiling.join(', ')}.`);
   if (excluded.ai.length) warnings.push(`Fora porque a IA discorda da compra: ${excluded.ai.join(', ')}.`);
+  if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
   if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {
     amount, invested, leftover: Math.max(0, amount - invested),
