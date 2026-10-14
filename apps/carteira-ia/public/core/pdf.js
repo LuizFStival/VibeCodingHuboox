@@ -9,8 +9,10 @@ const QUALITY = 0.75;
 let pdfjs;
 async function lib() {
   if (!pdfjs) {
-    pdfjs = await import('../vendor/pdfjs/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+    // No painel do Claude o app é um arquivo único; o pdf.js vai como arquivo ao lado da página.
+    const base = globalThis.__PDFJS_BASE__ ? new URL(globalThis.__PDFJS_BASE__, document.baseURI) : new URL('../vendor/pdfjs/', import.meta.url);
+    pdfjs = await import(new URL('pdf.min.mjs', base).href);
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdf.worker.min.mjs', base).href;
   }
   return pdfjs;
 }

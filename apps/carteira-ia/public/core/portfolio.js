@@ -49,8 +49,10 @@ export function priceOf(ticker, universe, holding) {
 function holdingRows(holdings, universe, settings) {
   return holdings.map((h) => {
     const price = priceOf(h.ticker, universe, h);
-    const value = price ? h.qty * price * fxFor(h.type, settings) : 0;
-    return { ...h, priceUsed: price, value };
+    const fx = fxFor(h.type, settings);
+    const value = price ? h.qty * price * fx : 0;
+    const cost = h.avgPrice ? h.qty * h.avgPrice * fx : null;
+    return { ...h, priceUsed: price, value, cost };
   });
 }
 
@@ -101,7 +103,7 @@ export function comparePortfolio({ holdings, reports, analyses = {}, settings = 
     const u = universe.get(r.ticker);
     if (u?.asset.rec === 'VENDER') alerts.push({ ticker: r.ticker, kind: 'vender', message: `${r.ticker}: o relatório recomenda VENDER.` });
     else if (u?.analysis?.verdict === 'DISCORDA') alerts.push({ ticker: r.ticker, kind: 'discorda', message: `${r.ticker}: a IA discorda da recomendação (${u.asset.rec}).` });
-    else if (!u && reports.some((rep) => rep.type === r.type)) alerts.push({ ticker: r.ticker, kind: 'fora', message: `${r.ticker}: não está na carteira recomendada de ${ASSET_TYPES[r.type].short}.` });
+    else if (!u && reports.some((rep) => rep.type === r.type)) alerts.push({ ticker: r.ticker, kind: 'fora', message: `${r.ticker}: não está na carteira recomendada de ${ASSET_TYPES[r.type].short} deste mês. Continua no seu patrimônio; só não recebe aporte novo.` });
     if (!r.priceUsed) alerts.push({ ticker: r.ticker, kind: 'preco', message: `${r.ticker}: sem preço — informe o preço atual para entrar nas contas.` });
   }
   for (const c of classes) {

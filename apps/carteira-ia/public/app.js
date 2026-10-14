@@ -3,7 +3,7 @@
 // Não há servidor: os dados ficam no localStorage e o Gemini é chamado direto daqui.
 
 import { createService } from './core/service.js';
-import { createStore, memoryStorage } from './core/store.js';
+import { createStore, memoryStorage, STORAGE_KEY } from './core/store.js';
 import { createGemini, DEFAULT_MODEL, MODEL_OPTIONS, usefulModels, pickModel } from './core/gemini.js';
 import { ASSET_TYPES, TYPE_IDS, detectMonth, detectType, reportStats, upside, checkReport } from './core/report.js';
 
@@ -13,16 +13,14 @@ const EMBEDDED = window.__CARTEIRA_ARTIFACT__ === true;
 
 const FAST_PAGES = 8; // leitura rápida: tabela, resumo, mudanças e desempenho ficam no começo
 import { VERDICTS } from './core/prompts.js';
+import { createClaudeAI } from './core/claude-ai.js';
+import { createDbStorage } from './core/db-storage.js';
 
-let storage;
-try {
-  storage = window.localStorage;
-  storage.getItem('probe');
-} catch {
-  storage = memoryStorage();
-}
-const store = createStore(storage);
-const svc = createService(store);
+// store/svc são criados no boot(): no painel, depois de carregar o banco do Claude.
+let store;
+let svc;
+let claudeAI = null;   // Claude do painel (capability `sample`), quando disponível
+let dbBacked = false;  // dados salvos no banco do painel (histórico em qualquer aparelho)
 
 const state = {
   tab: 'reports',
@@ -127,6 +125,10 @@ function job(label) {
 }
 
 function gemini() {
+  if (EMBEDDED) {
+    if (!claudeAI) throw new Error('O Claude não está disponível neste painel. Use o copiar e colar.');
+    return claudeAI;
+  }
   return createGemini({
     apiKey: store.apiKey,
     model: svc.model || DEFAULT_MODEL,
@@ -134,7 +136,7 @@ function gemini() {
     onModelChange: (next, old) => { svc.setModel(next); toast(`O modelo ${old} não está mais disponível na sua chave. Passei a usar ${next}.`); },
   });
 }
-const hasKey = () => Boolean(store.apiKey);
+const hasKey = () => (EMBEDDED ? Boolean(claudeAI) : Boolean(store.apiKey));
 
 /** Renderiza texto simples da IA (tópicos com "-", "*" ou "1)") sem usar HTML. */
 function renderPlainText(text) {
@@ -177,15 +179,17 @@ function emptyState() {
   return h('section', { class: 'stack' },
     h('section', { class: 'empty' },
       h('h2', {}, 'Suba as carteiras recomendadas do mês'),
-      EMBEDDED
-        ? h('p', { class: 'muted' }, 'Aqui no painel do Claude o app não consegue chamar a API do Gemini. Leia cada PDF pelo Gemini ou ChatGPT do site com o pedido pronto abaixo, ou importe um .json já extraído.')
+      EMBEDDED && !claudeAI
+        ? h('p', { class: 'muted' }, 'Aqui o app não conseguiu falar com o Claude. Leia cada PDF pelo Gemini ou ChatGPT do site com o pedido pronto abaixo, ou importe um .json já extraído.')
+        : EMBEDDED
+        ? h('p', { class: 'muted' }, 'Envie os PDFs de Ações, FIIs e Internacional (pode ser os três de uma vez). O Claude lê as tabelas e o resumo e organiza tudo aqui; cada mês fica guardado no histórico. O tipo e o mês vêm do nome do arquivo, ex.: Carteira_Fiis_-_Outubro26.pdf.')
         : h('p', { class: 'muted' }, 'Envie os PDFs de Ações, FIIs e Internacional (pode ser os três de uma vez). A IA lê as tabelas e as teses e organiza tudo aqui. O tipo e o mês vêm do nome do arquivo, ex.: Carteira_Fiis_-_Outubro26.pdf.'),
       !EMBEDDED && !hasKey() ? h('p', { class: 'notice' }, 'Para ler os PDFs pela API, cole sua chave do Gemini em ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); setTab('settings'); } }, 'Configurações'), ' (é gratuita). Sem chave, use a leitura pelo chat abaixo.') : null,
       h('div', { class: 'row', style: { 'justify-content': 'center' } },
-        EMBEDDED ? null : h('button', { class: 'btn primary', type: 'button', onclick: () => $('#fileInput').click() }, 'Escolher PDFs'),
+        EMBEDDED && !claudeAI ? null : h('button', { class: 'btn primary', type: 'button', onclick: () => $('#fileInput').click() }, 'Escolher PDFs'),
         h('button', { class: 'btn', type: 'button', onclick: () => $('#fileInput').click() }, 'Importar .json')),
-      h('p', { class: 'muted small' }, '🔒 Os dados ficam só neste navegador.')),
-    manualReadCard(true));
+      h('p', { class: 'muted small' }, dbBacked ? '🔒 Os dados ficam salvos na sua conta do Claude, numa área só sua.' : '🔒 Os dados ficam só neste navegador.')),
+    manualReadCard(EMBEDDED && !claudeAI));
 }
 
 /** Leitura do PDF sem API: o usuário anexa o PDF num chat com o pedido pronto e cola o JSON aqui. */
@@ -194,7 +198,7 @@ function manualReadCard(open = false) {
   mr.month ??= state.month ?? new Date().toISOString().slice(0, 7);
   const paste = h('textarea', { rows: 5, placeholder: 'Cole aqui a resposta do chat (o bloco JSON inteiro)…', oninput: (e) => { mr.text = e.target.value; } });
   paste.value = mr.text ?? '';
-  return h('details', { class: 'card', open: open || EMBEDDED || null },
+  return h('details', { class: 'card', open: open || null },
     h('summary', { class: 'card-summary' }, h('b', {}, 'Ler um PDF pelo chat (sem API)'), h('span', { class: 'muted small' }, ' · grátis, pelo Gemini ou ChatGPT do site')),
     h('div', { class: 'stack', style: { 'margin-top': '12px' } },
       h('div', { class: 'row' },
@@ -330,7 +334,7 @@ function verifyCard(r) {
       : 'Importado de um arquivo .json (não veio da leitura de um PDF).'),
     h('ul', { class: 'alert-list' }, checks.map((c) => h('li', { class: c.ok ? 'falta' : 'preco' }, `${c.ok ? '✓' : '!'} ${c.msg}`))),
     pages.length ? h('div', { class: 'page-shots' }, pages.map((pg) => h('figure', {},
-      h('img', { src: `data:${pg.mimeType};base64,${pg.data}`, alt: `Página ${pg.page} do PDF`, loading: 'lazy' }),
+      h('img', { src: pg.url ?? `data:${pg.mimeType};base64,${pg.data}`, alt: `Página ${pg.page} do PDF`, loading: 'lazy' }),
       h('figcaption', { class: 'muted small' }, `Página ${pg.page} do PDF original — compare com a tabela abaixo.`)))) : null,
     state.showPages.has(r.id) && !pages.length ? h('p', { class: 'muted small' }, 'A imagem da página não foi guardada (espaço do navegador cheio).') : null,
     bad ? h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Achou diferença? Use "Corrigir dados" no topo para ajustar.') : null);
@@ -437,22 +441,24 @@ function renderAnalysis() {
   const selected = reports.filter((r) => !state.anSkip.has(r.id)).map((r) => r.id);
   const calls = reports.reduce((s, r) => s + Math.ceil(r.assets.length / 5), 0);
 
-  const mode = EMBEDDED ? 'manual' : svc.settings().analysisMode ?? 'manual';
+  const mode = EMBEDDED && !claudeAI ? 'manual' : svc.settings().analysisMode ?? 'manual';
   const modeSwitch = h('div', { class: 'row' },
-    [['manual', 'Copiar e colar (grátis, com pesquisa)'], ['api', 'Automático pela API']].map(([k, label]) => h('button', {
+    [['manual', 'Copiar e colar (grátis, com pesquisa)'], ['api', EMBEDDED ? 'Automático pelo Claude (sem pesquisa web)' : 'Automático pela API']].map(([k, label]) => h('button', {
       class: `btn small${mode === k ? ' primary' : ''}`, type: 'button', onclick: () => { svc.updateSettings({ analysisMode: k }); render(); },
     }, label)));
 
   const apiControls = [
     h('p', { class: 'muted small', style: { 'margin-bottom': '12px' } },
-      'O app chama a API do Gemini direto. A pesquisa na web pela API exige faturamento ativo no Google AI Studio; sem ele, a análise sai só com o conhecimento do modelo (marcada "sem pesquisa web").'),
+      EMBEDDED
+        ? 'O Claude deste painel analisa cada ativo com o que já sabe, sem pesquisar na web (as respostas saem marcadas "sem pesquisa web"). Para notícias e resultados atuais, use o copiar e colar com o Gemini ou ChatGPT do site.'
+        : 'O app chama a API do Gemini direto. A pesquisa na web pela API exige faturamento ativo no Google AI Studio; sem ele, a análise sai só com o conhecimento do modelo (marcada "sem pesquisa web").'),
     h('div', { class: 'row' },
       reports.map((r) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !state.anSkip.has(r.id), onchange: (e) => { e.target.checked ? state.anSkip.delete(r.id) : state.anSkip.add(r.id); render(); } }),
         `${ASSET_TYPES[r.type].label} (${r.assets.length})`)),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn primary', type: 'button', disabled: state.busy || !reports.length, onclick: () => runAnalysis(selected) }, state.busy ? 'Analisando…' : 'Analisar selecionadas')),
     h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Cerca de ${calls} chamadas à API (5 ativos por chamada), uma por vez.`),
-    hasKey() ? null : h('p', { class: 'notice', style: { 'margin-top': '8px' } }, 'Configure a chave da API do Gemini em Configurações.'),
+    hasKey() || EMBEDDED ? null : h('p', { class: 'notice', style: { 'margin-top': '8px' } }, 'Configure a chave da API do Gemini em Configurações.'),
   ];
 
   const manualControls = [
@@ -462,7 +468,7 @@ function renderAnalysis() {
     h('div', { class: 'stack' }, reports.map((r) => manualRow(r))),
   ];
 
-  const controls = card('Revisar as recomendações com IA', EMBEDDED ? null : modeSwitch, mode === 'api' ? apiControls : manualControls);
+  const controls = card('Revisar as recomendações com IA', EMBEDDED && !claudeAI ? null : modeSwitch, mode === 'api' ? apiControls : manualControls);
 
   const filter = h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Mostrar:'),
     [['all', 'Todos'], ['DISCORDA', 'Discorda'], ['PARCIAL', 'Em parte'], ['CONCORDA', 'Concorda']].map(([k, label]) => h('button', {
@@ -578,9 +584,27 @@ function renderMine() {
           h('td', { class: 'num' }, pct(a.myWeight)),
           h('td', { class: `num ${a.gap > 0.005 ? 'pos' : a.gap < -0.005 ? 'neg' : ''}` }, a.gap > 0.005 ? `faltam ${pct(a.gap)}` : a.gap < -0.005 ? `sobram ${pct(-a.gap)}` : 'ok'),
           h('td', { class: 'num' }, a.myValue ? brl(a.myValue, 0) : '—'))),
-        c.outside.map((o) => h('tr', {}, h('td', { class: 'tk' }, o.ticker, h('small', {}, 'fora da recomendada')), h('td', {}, '—'), h('td', { class: 'num' }, '0%'), h('td', { class: 'num' }, pct(c.value ? o.value / c.value : 0)), h('td', { class: 'num neg' }, 'fora'), h('td', { class: 'num' }, brl(o.value, 0)))))))));
+        c.outside.map((o) => h('tr', {}, h('td', { class: 'tk' }, o.ticker, h('small', {}, 'fora da recomendada deste mês')), h('td', {}, '—'), h('td', { class: 'num' }, '0%'), h('td', { class: 'num' }, pct(c.value ? o.value / c.value : 0)), h('td', { class: 'num muted' }, 'mantido, sem aporte'), h('td', { class: 'num' }, brl(o.value, 0)))))))));
 
-  return [holdingsCard, h('div', { class: 'grid two' }, classCard, alertsCard), ...perClass];
+  // Onde e quanto está o patrimônio: total, aportado, resultado, por classe e por ativo.
+  const costRows = cmp.rows.filter((r) => r.cost !== null);
+  const cost = costRows.reduce((a, r) => a + r.cost, 0);
+  const valueWithCost = costRows.reduce((a, r) => a + r.value, 0);
+  const result = valueWithCost - cost;
+  const kpis = h('div', { class: 'grid kpis' },
+    kpi('Patrimônio investido', brl(cmp.total), `${cmp.rows.length} ativos · valor atual`, 'hero'),
+    kpi('Total aportado', cost ? brl(cost) : '—', costRows.length < cmp.rows.length ? `${cmp.rows.length - costRows.length} sem preço médio` : 'soma do preço médio × cotas'),
+    kpi('Resultado', cost ? `${result >= 0 ? '+' : ''}${brl(result)}` : '—', cost ? signedPct(result / cost) : 'informe o preço médio', ''),
+    ...cmp.classes.filter((c) => c.value > 0).map((c) => kpi(ASSET_TYPES[c.type].label, brl(c.value), `${pct(c.pct)} do patrimônio`)));
+  const byAsset = card('Onde está cada real', h('span', { class: 'muted small' }, `${brl(cmp.total)} no total`),
+    bars([...cmp.rows].filter((r) => r.value > 0).sort((a, b) => b.value - a.value).map((r) => ({
+      label: r.ticker, value: r.value / (cmp.total || 1), cls: `fill-${r.type}`,
+      text: `${brl(r.value, 0)} · ${pct(cmp.total ? r.value / cmp.total : 0)}`,
+      title: `${ASSET_TYPES[r.type].short}${r.cost ? ` · aportado ${brl(r.cost)}` : ''}`,
+    }))),
+    h('div', { class: 'legend' }, TYPE_IDS.map((t) => h('span', { class: `fill-${t}` }, h('i'), ASSET_TYPES[t].short))));
+
+  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), holdingsCard, alertsCard, ...perClass];
 }
 
 function pasteHoldings() {
@@ -643,7 +667,7 @@ function renderAporte() {
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
       h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, state.aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
-  const manualMode = EMBEDDED || (s.analysisMode ?? 'manual') === 'manual';
+  const manualMode = (EMBEDDED && !claudeAI) || (s.analysisMode ?? 'manual') === 'manual';
   const askApi = async () => {
     if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); return; }
     state.busy = true; render();
@@ -716,7 +740,10 @@ function renderSettings() {
   const modelSelect = h('select', {}, [...new Set([svc.model || DEFAULT_MODEL, ...MODEL_OPTIONS, ...usefulModels(state.models ?? [])])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
   const customModel = h('input', { type: 'text', placeholder: 'ou digite outro modelo (ex.: gemini-3.8-flash)', style: { flex: '1 1 260px' } });
 
-  const api = EMBEDDED ? card('API do Gemini', null, h('p', { class: 'muted' }, 'Aqui no painel do Claude o app não consegue acessar a API do Gemini. Use a leitura e a análise por copiar e colar, que funcionam normalmente. Para usar a API, abra o app pelo atalho do Windows.')) : card('API do Gemini', null,
+  const api = EMBEDDED ? card('IA e dados neste painel', null, h('ul', { class: 'alert-list' },
+    h('li', { class: claudeAI ? 'falta' : 'preco' }, claudeAI ? '✓ Leitura dos PDFs e análise pelo Claude do painel (o Claude pede permissão no primeiro uso; usa o seu plano do Claude).' : '! O Claude do painel não está disponível aqui: use a leitura e a análise por copiar e colar.'),
+    h('li', { class: dbBacked ? 'falta' : 'preco' }, dbBacked ? '✓ Histórico salvo na sua conta do Claude, numa área privada: abre igual em qualquer aparelho.' : '! Dados salvos só neste navegador.'),
+    h('li', {}, 'A API do Gemini não funciona aqui (o painel bloqueia). Para pesquisa na web, use o copiar e colar com o Gemini ou ChatGPT do site.'))) : card('API do Gemini', null,
     h('div', { class: 'stack' },
       h('p', { class: 'muted small' }, 'Crie uma chave gratuita em ', h('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener noreferrer' }, 'aistudio.google.com/apikey'), '. Ela fica salva só neste navegador e não entra no backup.'),
       h('div', { class: 'row' }, keyInput,
@@ -774,7 +801,7 @@ function openTextDialog({ title, hint, value, onSave, replaceOption = false }) {
 // ---------- upload
 let pending = [];
 function openUpload(files) {
-  if (EMBEDDED) {
+  if (EMBEDDED && !claudeAI) {
     const pdfs = [...files].filter((f) => !/\.json$/i.test(f.name));
     if (pdfs.length) toast('Aqui no painel o app não lê PDFs pela API. Use "Ler um PDF pelo chat" na aba Carteiras.', true);
     files = [...files].filter((f) => /\.json$/i.test(f.name));
@@ -859,5 +886,29 @@ document.addEventListener('drop', (e) => {
   openUpload(files);
 });
 
-if (EMBEDDED) { $('#uploadBtn').textContent = 'Importar .json'; $('#fileInput').accept = '.json,application/json'; }
-render();
+
+async function boot() {
+  let storage;
+  try { storage = window.localStorage; storage.getItem('probe'); } catch { storage = memoryStorage(); }
+  if (EMBEDDED && window.claude?.use) {
+    $('#tab-reports').replaceChildren(h('p', { class: 'muted' }, 'Carregando seus dados…'));
+    const [db, user, assets, sample] = await Promise.all(['db', 'user', 'assets', 'sample'].map((n) => window.claude.use(n).catch(() => null)));
+    if (sample) claudeAI = createClaudeAI(sample);
+    try {
+      const dbs = db && user ? await createDbStorage({ db, user, assets, onError: (m) => toast(m, true) }) : null;
+      if (dbs) { storage = dbs; dbBacked = true; }
+    } catch (e) { toast(`Não consegui abrir o banco do Claude (${e?.code ?? e?.message}); usando só este navegador.`, true); }
+  }
+  store = createStore(storage);
+  svc = createService(store);
+  // Primeira abertura com o banco: traz o que já estava salvo só neste navegador.
+  if (dbBacked && !svc.months().length && !svc.holdings().length) {
+    try {
+      const old = window.localStorage.getItem(STORAGE_KEY);
+      if (old) { store.replaceAll(JSON.parse(old)); toast('Trouxe para o histórico os dados que estavam neste navegador.'); }
+    } catch { /* sem dados antigos */ }
+  }
+  if (EMBEDDED && !claudeAI) { $('#uploadBtn').textContent = 'Importar .json'; $('#fileInput').accept = '.json,application/json'; }
+  render();
+}
+boot();
