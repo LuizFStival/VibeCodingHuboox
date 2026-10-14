@@ -200,8 +200,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       const mine = cls.value ? it.current / cls.value : 0;
       const up = a.ceiling && price ? a.ceiling / price - 1 : null;
       const sc = scoreAsset(a, analyses[a.ticker]);
+      const own = holdings.find((h) => h.ticker === a.ticker);
       lines.push({
         score: sc.score,
+        ownedQty: own?.qty ?? 0, ownedValue: holdingValue.get(a.ticker) ?? 0,
         ticker: a.ticker, name: a.name, type: ci.key, rec: a.rec, verdict: analyses[a.ticker]?.verdict ?? null,
         price, currency: ASSET_TYPES[ci.key].currency, unitBRL: price * fx, ideal: perAsset.get(a.ticker),
         deficit: it.target - it.current, fractional: ci.key === 'internacional' && settings.fractionalIntl,

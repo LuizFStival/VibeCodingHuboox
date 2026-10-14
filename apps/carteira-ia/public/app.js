@@ -34,6 +34,7 @@ const state = {
   reviewPaste: {},      // pareceres colados do GPT, por tipo
   proposedKey: null,    // parâmetros do último "Propor aporte"
   importFlash: {},      // mensagem de sucesso da importação, por relatório
+  mineClass: 'all',     // filtro da aba Minha carteira
   showPages: new Set(), // relatórios com a página original aberta
   manualRead: { type: 'acoes' }, // leitura de PDF pelo chat
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
@@ -564,13 +565,22 @@ function renderMine() {
   h('label', { class: 'field' }, 'Preço atual', h('input', { name: 'price', type: 'text', inputmode: 'decimal', placeholder: 'do relatório/IA' })),
   h('button', { class: 'btn primary', type: 'submit' }, 'Adicionar'));
 
-  const rows = [...cmp.rows].sort((a, b) => TYPE_IDS.indexOf(a.type) - TYPE_IDS.indexOf(b.type) || b.value - a.value);
+  // Filtro por classe: Todas · Ações · FIIs · Internacional.
+  const sel = TYPE_IDS.includes(state.mineClass) ? state.mineClass : 'all';
+  const inSel = (t) => sel === 'all' || t === sel;
+  const selClass = sel === 'all' ? null : cmp.classes.find((c) => c.type === sel);
+  const base = selClass ? selClass.value : cmp.total;
+  const rows = [...cmp.rows].filter((r) => inSel(r.type)).sort((a, b) => TYPE_IDS.indexOf(a.type) - TYPE_IDS.indexOf(b.type) || b.value - a.value);
+  const filterBar = h('div', { class: 'row' },
+    [['all', `Todas (${cmp.rows.length})`], ...TYPE_IDS.map((t) => [t, `${ASSET_TYPES[t].short} (${cmp.rows.filter((r) => r.type === t).length})`])].map(([k, label]) => h('button', {
+      class: `btn${sel === k ? ' primary' : ''}`, type: 'button', onclick: () => { state.mineClass = k; render(); },
+    }, k === 'all' ? label : [h('span', { class: `dot type-${k}` }), label])));
   const universe = new Map(svc.reportsFor(month ?? '').flatMap((r) => r.assets.map((a) => [a.ticker, a])));
   const analyses = month ? svc.analysesFor(month) : {};
   const edit = (hd, field) => (e) => { try { svc.upsertHolding({ ...hd, [field]: e.target.value }); render(); } catch (err) { toast(err.message, true); render(); } };
 
   const table = rows.length ? h('div', { class: 'table-wrap' }, h('table', {},
-    h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Qtd', 'Preço médio', 'Preço atual', 'Valor (R$)', '% total', 'Relatório', ''].map((c) => h('th', {}, c)))),
+    h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Qtd', 'Preço médio', 'Preço atual', 'Valor (R$)', selClass ? `% em ${ASSET_TYPES[sel].short}` : '% total', 'Relatório', ''].map((c) => h('th', {}, c)))),
     h('tbody', {}, rows.map((r) => {
       const rec = universe.get(r.ticker);
       return h('tr', {},
@@ -580,11 +590,11 @@ function renderMine() {
         h('td', {}, h('input', { type: 'text', inputmode: 'decimal', value: r.avgPrice ?? '', onchange: edit(r, 'avgPrice'), 'aria-label': 'Preço médio' })),
         h('td', {}, h('input', { type: 'text', inputmode: 'decimal', value: r.price ?? '', placeholder: r.priceUsed ? String(r.priceUsed) : 'informe', onchange: edit(r, 'price'), 'aria-label': 'Preço atual' })),
         h('td', { class: 'num' }, brl(r.value)),
-        h('td', { class: 'num' }, pct(cmp.total ? r.value / cmp.total : 0)),
+        h('td', { class: 'num' }, pct(base ? r.value / base : 0)),
         h('td', {}, rec ? recBadge(rec.rec) : h('span', { class: 'muted small' }, 'fora'), ' ', analyses[r.ticker] ? verdictBadge(analyses[r.ticker].verdict) : null),
         h('td', {}, h('button', { class: 'btn ghost small', type: 'button', title: 'Remover', onclick: () => { svc.removeHolding(r.id); render(); } }, '✕')));
     })),
-    h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(cmp.total)), h('td', { colspan: 3 }))))) : h('p', { class: 'muted' }, 'Nenhuma posição ainda. Adicione acima ou cole a lista da sua corretora.');
+    h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, selClass ? `Total em ${ASSET_TYPES[sel].label}` : 'Total'), h('td', { class: 'num' }, brl(base)), h('td', { colspan: 3 }))))) : h('p', { class: 'muted' }, cmp.rows.length ? 'Nenhuma posição nesta classe.' : 'Nenhuma posição ainda. Adicione acima ou cole a lista da sua corretora.');
 
   const holdingsCard = card('Minhas posições', h('div', { class: 'row' },
     h('button', { class: 'btn small', type: 'button', onclick: pasteHoldings }, 'Colar lista'),
@@ -592,16 +602,16 @@ function renderMine() {
   addForm, h('div', { style: { 'margin-top': '14px' } }, table),
   h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Preço atual em branco = usa o preço da análise da IA ou do relatório. Internacional em US$, convertido a ${brl(settings.usdBrl)} (ajuste no Aporte).`));
 
-  if (!rows.length) return [holdingsCard];
+  if (!cmp.rows.length) return [holdingsCard];
 
   const classCard = card('Distribuição por classe', h('span', { class: 'muted small' }, 'traço = alvo'),
     h('div', { class: 'stacked', style: { 'margin-bottom': '14px' } }, cmp.classes.filter((c) => c.value > 0).map((c) => h('span', { class: `fill-${c.type}`, style: { width: `${c.pct * 100}%` }, title: `${c.label}: ${pct(c.pct)}` }))),
     bars(cmp.classes.map((c) => ({ label: ASSET_TYPES[c.type].short, value: c.pct, target: c.target, cls: `fill-${c.type}`, text: `${pct(c.pct)} · ${brl(c.value, 0)}` })), { max: 1 }));
 
   const alertsCard = card('O que chama atenção', h('span', { class: 'muted small' }, month ? `vs. carteiras de ${monthShort(month)}` : ''),
-    cmp.alerts.length ? h('ul', { class: 'alert-list' }, cmp.alerts.map((a) => h('li', { class: a.kind }, a.message))) : h('p', { class: 'muted' }, 'Tudo alinhado com as carteiras recomendadas.'));
+    (() => { const al = cmp.alerts.filter((a) => sel === 'all' || (a.ticker ? (cmp.rows.find((r) => r.ticker === a.ticker)?.type ?? svc.reportsFor(month ?? '').find((rp) => rp.assets.some((x) => x.ticker === a.ticker))?.type) === sel : a.message.startsWith(ASSET_TYPES[sel].short))); return al.length ? h('ul', { class: 'alert-list' }, al.map((a) => h('li', { class: a.kind }, a.message))) : h('p', { class: 'muted' }, 'Tudo alinhado com as carteiras recomendadas.'); })());
 
-  const perClass = cmp.classes.filter((c) => c.hasReport).map((c) => card(`${c.label}: sua carteira × recomendada`, h('span', { class: 'muted small' }, `${brl(c.value, 0)} na classe`),
+  const perClass = cmp.classes.filter((c) => c.hasReport && inSel(c.type)).map((c) => card(`${c.label}: sua carteira × recomendada`, h('span', { class: 'muted small' }, `${brl(c.value, 0)} na classe`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Ativo', 'Recomendação', 'Peso alvo', 'Seu peso', 'Diferença', 'Seu valor'].map((x) => h('th', {}, x)))),
       h('tbody', {},
@@ -615,33 +625,35 @@ function renderMine() {
         c.outside.map((o) => h('tr', {}, h('td', { class: 'tk' }, o.ticker, h('small', {}, 'fora da recomendada deste mês')), h('td', {}, '—'), h('td', { class: 'num' }, '0%'), h('td', { class: 'num' }, pct(c.value ? o.value / c.value : 0)), h('td', { class: 'num muted' }, 'mantido, sem aporte'), h('td', { class: 'num' }, brl(o.value, 0)))))))));
 
   // Onde e quanto está o patrimônio: total, aportado, resultado, por classe e por ativo.
-  const costRows = cmp.rows.filter((r) => r.cost !== null);
+  const costRows = rows.filter((r) => r.cost !== null);
   const cost = costRows.reduce((a, r) => a + r.cost, 0);
   const valueWithCost = costRows.reduce((a, r) => a + r.value, 0);
   const result = valueWithCost - cost;
   const kpis = h('div', { class: 'grid kpis' },
-    kpi('Patrimônio investido', brl(cmp.total), `${cmp.rows.length} ativos · valor atual`, 'hero'),
-    kpi('Total aportado', cost ? brl(cost) : '—', costRows.length < cmp.rows.length ? `${cmp.rows.length - costRows.length} sem preço médio` : 'soma do preço médio × cotas'),
+    selClass
+      ? kpi(ASSET_TYPES[sel].label, brl(selClass.value), `${rows.length} ativos · ${pct(selClass.pct)} do patrimônio (alvo ${pct(selClass.target, 0)})`, 'hero')
+      : kpi('Patrimônio investido', brl(cmp.total), `${cmp.rows.length} ativos · valor atual`, 'hero'),
+    kpi('Total aportado', cost ? brl(cost) : '—', costRows.length < rows.length ? `${rows.length - costRows.length} sem preço médio` : 'soma do preço médio × cotas'),
     kpi('Resultado', cost ? `${result >= 0 ? '+' : ''}${brl(result)}` : '—', cost ? signedPct(result / cost) : 'informe o preço médio', ''),
-    ...cmp.classes.filter((c) => c.value > 0).map((c) => kpi(ASSET_TYPES[c.type].label, brl(c.value), `${pct(c.pct)} do patrimônio`)));
-  const byAsset = card('Onde está cada real', h('span', { class: 'muted small' }, `${brl(cmp.total)} no total`),
-    bars([...cmp.rows].filter((r) => r.value > 0).sort((a, b) => b.value - a.value).map((r) => ({
-      label: r.ticker, value: r.value / (cmp.total || 1), cls: `fill-${r.type}`,
-      text: `${brl(r.value, 0)} · ${pct(cmp.total ? r.value / cmp.total : 0)}`,
+    ...(selClass ? [] : cmp.classes.filter((c) => c.value > 0).map((c) => kpi(ASSET_TYPES[c.type].label, brl(c.value), `${pct(c.pct)} do patrimônio`))));
+  const byAsset = card(selClass ? `Seus ${ASSET_TYPES[sel].short}: onde está cada real` : 'Onde está cada real', h('span', { class: 'muted small' }, `${brl(base)} no total`),
+    bars([...rows].filter((r) => r.value > 0).sort((a, b) => b.value - a.value).map((r) => ({
+      label: r.ticker, value: r.value / (base || 1), cls: `fill-${r.type}`,
+      text: `${brl(r.value, 0)} · ${pct(base ? r.value / base : 0)}${selClass ? ` (${pct(cmp.total ? r.value / cmp.total : 0)} do total)` : ''}`,
       title: `${ASSET_TYPES[r.type].short}${r.cost ? ` · aportado ${brl(r.cost)}` : ''}`,
     }))),
     h('div', { class: 'legend' }, TYPE_IDS.map((t) => h('span', { class: `fill-${t}` }, h('i'), ASSET_TYPES[t].short))));
 
-  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), diagnosisCard(cmp),
+  return [filterBar, kpis, h('div', { class: 'grid two' }, byAsset, classCard), diagnosisCard(cmp, sel),
     aiReviewCard('portfolio', { title: 'Análise da carteira pela IA', intro: 'A IA cruza a sua carteira com o ranking e as pesquisas do mês: concentração, pontos fortes, posições em risco, o que falta e as prioridades dos próximos aportes.' }),
     balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
 }
 
 /** Diagnóstico: cada posição cruzada com o ranking do mês. */
-function diagnosisCard(cmp) {
+function diagnosisCard(cmp, sel = 'all') {
   const ranking = state.month ? svc.ranking(state.month) : [];
   const byTicker = new Map(ranking.map((r) => [r.ticker, r]));
-  const rows = [...cmp.rows].sort((a, b) => b.value - a.value).map((r) => {
+  const rows = [...cmp.rows].filter((r) => sel === 'all' || r.type === sel).sort((a, b) => b.value - a.value).map((r) => {
     const rk = byTicker.get(r.ticker);
     const share = cmp.total ? r.value / cmp.total : 0;
     const cls = cmp.classes.find((c) => c.type === r.type);
@@ -793,16 +805,19 @@ function renderAporte() {
 
   const lines = plan.lines.length ? card('Proposta: onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte'].map((x) => h('th', {}, x)))),
+      h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Na sua carteira', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
         h('td', { class: 'tk' }, l.ticker, h('small', { title: l.reason, style: { 'white-space': 'normal', 'max-width': '320px' } }, l.reason)),
         h('td', {}, h('span', { class: `dot type-${l.type}` }), ASSET_TYPES[l.type].short),
+        h('td', { class: 'small' }, l.ownedQty > 0
+          ? h('span', {}, `tem ${qtyFmt(l.ownedQty)} (${brl(l.ownedValue, 0)})`, h('br'), h('span', { class: 'muted' }, `fica com ${qtyFmt(Math.round((l.ownedQty + l.qty) * 10000) / 10000)}`))
+          : h('span', { class: 'badge rec-MANTER' }, 'Novo na carteira')),
         h('td', {}, recBadge(l.rec), ' ', verdictBadge(l.verdict)),
         h('td', { class: 'num' }, money(l.price, l.currency)),
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
         h('td', { class: 'num' }, brl(l.amount)),
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
-      h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, `Total · ${plan.lines.filter((l) => !l.ownedQty).length} novo(s) na carteira, ${plan.lines.filter((l) => l.ownedQty).length} reforço(s)`), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
   const review = aiReviewCard('plan', {
     title: 'Opinião final da IA sobre o plano',
