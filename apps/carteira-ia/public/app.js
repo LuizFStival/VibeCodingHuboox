@@ -57,6 +57,7 @@ const money = (v, cur) => (v === null || v === undefined ? '—' : v.toLocaleStr
 const pct = (x, digits = 1) => (x === null || x === undefined || Number.isNaN(x) ? '—' : `${(x * 100).toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })}%`);
 const signedPct = (x, digits = 1) => (x === null || x === undefined ? '—' : `${x > 0 ? '+' : ''}${pct(x, digits)}`);
 const qtyFmt = (q) => q.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+const num = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const REC_LABEL = { COMPRAR: 'Comprar', AGUARDAR: 'Aguardar', MANTER: 'Manter', VENDER: 'Vender' };
 
 function h(tag, attrs = {}, ...children) {
@@ -172,11 +173,18 @@ function setTab(tab) {
   render();
 }
 
+// Trocar o conteúdo tira o foco do campo editado, e o "blur" pode disparar outro render no meio
+// deste; nesse caso o segundo espera o primeiro terminar.
+let rendering = false;
 function render() {
-  refreshMonths();
-  const panel = $(`#tab-${state.tab}`);
-  const fn = { reports: renderReports, analysis: renderAnalysis, mine: renderMine, aporte: renderAporte, settings: renderSettings }[state.tab];
-  panel.replaceChildren(...[fn()].flat(Infinity).filter(Boolean));
+  if (rendering) { queueMicrotask(render); return; }
+  rendering = true;
+  try {
+    refreshMonths();
+    const panel = $(`#tab-${state.tab}`);
+    const fn = { reports: renderReports, analysis: renderAnalysis, mine: renderMine, aporte: renderAporte, settings: renderSettings }[state.tab];
+    panel.replaceChildren(...[fn()].flat(Infinity).filter(Boolean));
+  } finally { rendering = false; }
 }
 
 function emptyState() {
@@ -779,7 +787,10 @@ function renderAporte() {
     h('div', { class: 'form-grid' },
       h('label', { class: 'field' }, 'Valor do aporte (R$)', h('input', { id: 'aporteAmount', class: 'input-money', type: 'number', min: 0, step: 0.01, value: String(aporte), onchange: (e) => { svc.updateSettings({ aporteAmount: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } })),
       TYPE_IDS.map((t) => h('label', { class: 'field' }, `Alvo ${ASSET_TYPES[t].short} (%)`, h('input', { type: 'number', min: 0, max: 100, step: 5, value: String(Math.round((s.targets[t] ?? 0) * 100)), onchange: setTarget(t) }))),
-      h('label', { class: 'field' }, 'Dólar (R$)', h('input', { type: 'number', min: 0, step: 0.01, value: String(s.usdBrl), onchange: (e) => { svc.updateSettings({ usdBrl: Number(e.target.value) || 0 }); render(); } }))),
+      h('label', { class: 'field' }, 'Dólar (R$)', h('input', { type: 'number', min: 0, step: 0.01, value: String(s.usdBrl), onchange: (e) => { svc.updateSettings({ usdBrl: Number(e.target.value) || 0 }); render(); } })),
+      h('label', { class: 'field', title: 'Dólares parados na corretora no exterior (Nomad, Avenue…): pagam as compras do internacional sem nova remessa' }, 'Dólar já na corretora (US$)', h('input', { id: 'usdCash', type: 'number', min: 0, step: 0.01, value: String(s.usdCash ?? 0), onchange: (e) => { svc.updateSettings({ usdCash: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } }))),
+    Number(s.usdCash) > 0 ? h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Os US$ ${num(s.usdCash)} (≈ ${brl(s.usdCash * s.usdBrl)}) pagam o internacional e contam no seu patrimônio; os reais do aporte ficam para ações e FIIs.`, ' ',
+      h('label', { class: 'check', style: { display: 'inline-flex' } }, h('input', { type: 'checkbox', checked: s.remitBRL === true, onchange: (e) => { svc.updateSettings({ remitBRL: e.target.checked }); render(); } }), 'Se faltar no exterior, enviar reais (IOF 1,1% + spread)')) : null,
     Math.abs(sumTargets - 1) > 0.001 ? h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Os alvos somam ${Math.round(sumTargets * 100)}% — são normalizados para 100%.`) : null,
     h('div', { class: 'row', style: { 'margin-top': '12px' } },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAi, onchange: (e) => { svc.updateSettings({ respectAi: e.target.checked }); render(); } }), 'Não aportar onde a IA discorda'),
@@ -793,33 +804,36 @@ function renderAporte() {
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.remitBRL, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
   if (state.keepProposal) { state.proposedKey = paramsKey; state.keepProposal = false; }
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
-    proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}`);
+    proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}${Number(s.usdCash) > 0 ? ` + US$ ${num(s.usdCash)}` : ''}`);
   const proposeCard = h('div', { class: 'card row' }, proposeBtn,
     h('span', { class: 'muted small' }, state.proposedKey && !proposed ? 'Você mudou o valor ou a divisão: clique para recalcular a proposta.' : proposed ? 'Proposta abaixo. Mudou algo acima? Clique de novo.' : 'Escolha o perfil e o valor acima e clique para ver onde colocar o dinheiro.'));
   if (!proposed) return [form, proposeCard];
 
   const kpis = h('div', { class: 'grid kpis', id: 'plano' },
-    kpi('Aporte', brl(plan.amount), null, 'hero'),
+    kpi('Aporte', brl(plan.amount), plan.usdCash > 0 ? `${brl(plan.brlAmount)} + US$ ${num(plan.usdCash)} já no exterior` : null, 'hero'),
     kpi('Investido', brl(plan.invested), `${plan.lines.length} ativos`),
-    kpi('Sobra', brl(plan.leftover), 'não fecha cota inteira'));
+    plan.usdCash > 0
+      ? kpi('Sobra', brl(plan.brlLeftover), `em reais · sobra em dólar US$ ${num(plan.usdLeftover)}${plan.remitted > 1 ? ` · enviar ${brl(plan.remitted)} ao exterior` : ''}`)
+      : kpi('Sobra', brl(plan.leftover), 'não fecha cota inteira'));
 
   // O balanço que a conta usou: quanto cada classe tem, quanto deveria ter depois do aporte e quanto falta.
-  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)} + aporte ${brl(plan.amount, 0)} = ${brl(plan.totalAfter, 0)}`),
+  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)}${plan.usdCash > 0 ? ` (inclui US$ ${num(plan.usdCash)} em caixa)` : ''} + aporte ${brl(plan.brlAmount, 0)} = ${brl(plan.totalAfter, 0)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Classe', 'Hoje', 'Alvo', 'Valor no alvo', 'Falta para o alvo', 'Recebe agora', 'Por quê'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.classes.map((c) => h('tr', {},
         h('td', {}, h('span', { class: `dot type-${c.type}` }), c.label),
-        h('td', { class: 'num' }, `${brl(c.before, 0)} (${pct(c.pctBefore)})`),
+        h('td', { class: 'num' }, `${brl(c.before, 0)} (${pct(c.pctBefore)})`, c.cash > 0 ? h('div', { class: 'muted small' }, `com ${brl(c.cash, 0)} em caixa`) : null),
         h('td', { class: 'num' }, pct(c.target, 0)),
         h('td', { class: 'num' }, brl(c.targetValue, 0)),
         h('td', { class: 'num' }, c.need > 1 ? brl(c.need, 0) : '—'),
         h('td', { class: `num ${c.added > 0 ? 'pos' : ''}` }, c.added > 0 ? brl(c.added, 0) : 'R$ 0'),
         h('td', { class: 'small', style: { 'white-space': 'normal' } },
           !c.hasReport ? 'sem relatório neste mês'
+            : c.cash > 0 && c.added > 0 ? `usa o dólar que já está na corretora (${brl(Math.min(c.cash, c.added), 0)}), em vez de deixá-lo parado${c.added > c.cash + 1 ? '; o resto vai por remessa' : ''}`
             : c.need <= 1 ? 'já está no alvo (ou acima): não precisa de dinheiro este mês'
             : c.added <= 0 ? 'falta dinheiro, mas nenhum ativo da classe está liberado para compra (veja abaixo)'
             : c.added < c.need * 0.95 - 5 ? 'recebe parte do que falta; o resto nos próximos aportes' : 'recebe o que falta (a diferença é o arredondamento das cotas)')))))),
@@ -843,7 +857,7 @@ function renderAporte() {
         h('td', {}, recBadge(l.rec), ' ', verdictBadge(l.verdict)),
         h('td', { class: 'num' }, money(l.price, l.currency)),
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
-        h('td', { class: 'num' }, brl(l.amount)),
+        h('td', { class: 'num' }, brl(l.amount), l.currency === 'USD' && l.price ? h('div', { class: 'muted small' }, `US$ ${num(l.amount / (l.unitBRL / l.price))}`) : null),
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0)),
         h('td', {}, h('button', { class: 'btn ghost small', type: 'button', title: `Tirar ${l.ticker} desta proposta`, onclick: () => adjustPlan(l.ticker, 'exclude') }, '✕ tirar'))))),
       h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, `Total · ${plan.lines.filter((l) => !l.ownedQty).length} novo(s) na carteira, ${plan.lines.filter((l) => l.ownedQty).length} reforço(s)`), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0)), h('td'))))) ) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));

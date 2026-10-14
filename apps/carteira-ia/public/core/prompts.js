@@ -320,7 +320,7 @@ export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
   return [
     `Hoje é ${today}. Você é um analista de investimentos revisando o plano de aporte do mês de um investidor pessoa física.`,
     webLine(web),
-    `Patrimônio atual: ${brlTxt(cmp.total)}. Aporte: ${brlTxt(plan.amount)}.`,
+    `Patrimônio atual: ${brlTxt(plan.totalBefore ?? cmp.total)}. Aporte: ${plan.usdCash > 0 ? `${brlTxt(plan.brlAmount)} em reais (para Brasil) + US$ ${plan.usdCash.toFixed(2)} já parados na corretora no exterior (≈ ${brlTxt(plan.usdCashBRL)}, pagam o internacional sem nova remessa)${plan.remitted > 1 ? `; faltaram ${brlTxt(plan.remitted)} a enviar ao exterior` : ''}` : brlTxt(plan.amount)}.`,
     `Classes (antes → depois → alvo): ${plan.classes.map((c) => `${c.label} ${(c.pctBefore * 100).toFixed(1)}% → ${(c.pctAfter * 100).toFixed(1)}% → ${(c.target * 100).toFixed(0)}%`).join(' · ')}`,
     'Compras propostas:',
     plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker} [${l.segment ?? '?'}${l.ownedQty ? `, já tem ${l.ownedQty}` : ', NOVO'}]: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
