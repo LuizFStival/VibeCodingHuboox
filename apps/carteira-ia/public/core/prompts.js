@@ -73,6 +73,23 @@ export function extractionPrompt(type, { withThesis = true } = {}) {
   ].join('\n');
 }
 
+/** Pedido para ler o PDF num chat (Gemini/ChatGPT do site) quando a API não está disponível. */
+export function manualExtractionPrompt(type) {
+  return [
+    extractionPrompt(type, { withThesis: true }),
+    '',
+    'O PDF está anexado nesta conversa. Leia TODAS as páginas.',
+    'Responda com UM ÚNICO bloco de código JSON (sem texto fora dele) neste formato:',
+    JSON.stringify({
+      provider: 'nome da casa/carteira', title: 'título do relatório', summary: 'resumo do mês em 3 a 6 frases',
+      macroHighlights: ['Selic ...'], changes: [{ ticker: 'XXXX3', action: 'Venda', reason: '...' }],
+      tablePages: [4],
+      assets: [{ ticker: 'XXXX3', name: '...', segment: '...', allocationPct: 12, strategy: '...', dividendYieldPct: 6.5, price: 53.15, ceilingPrice: 52.48, pvp: null, recommendation: 'COMPRAR | AGUARDAR | MANTER | VENDER', thesis: '...', page: 4 }],
+      performance: { period: '...', items: [{ name: 'Carteira', returnPct: 110.46 }] },
+    }),
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------- análise com pesquisa
 
 const FOCUS = {

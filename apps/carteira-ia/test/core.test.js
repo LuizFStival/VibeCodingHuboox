@@ -414,3 +414,12 @@ test('leitura rápida não pede teses', async () => {
   await svc.extractReport(fake, { images: [{ mimeType: 'image/jpeg', data: 'AA==' }], pagesTotal: 1, type: 'acoes', month: '2026-10' });
   assert.match(prompt, /tese de cada ativo/);
 });
+
+test('leitura do PDF pelo chat: pedido pronto e resposta colada', () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  assert.match(svc.manualExtractionPrompt('fiis'), /PDF está anexado/);
+  const res = svc.importManualReport('Segue:\n```json\n' + JSON.stringify(fixture('acoes.json')) + '\n```', { type: 'acoes', month: '2026-10' });
+  assert.equal(res.report.assets.length, 5);
+  assert.equal(svc.report('2026-10:acoes').extraction.manual, true);
+  assert.throws(() => svc.importManualReport('não li', { type: 'acoes', month: '2026-10' }), /JSON/);
+});

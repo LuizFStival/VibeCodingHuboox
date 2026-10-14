@@ -7,6 +7,10 @@ import { createStore, memoryStorage } from './core/store.js';
 import { createGemini, DEFAULT_MODEL, MODEL_OPTIONS, usefulModels, pickModel } from './core/gemini.js';
 import { ASSET_TYPES, TYPE_IDS, detectMonth, detectType, reportStats, upside, checkReport } from './core/report.js';
 
+// No painel de Artifact do Claude a página roda num frame que bloqueia chamadas externas
+// (a API do Gemini), downloads e confirm(): lá o app usa só os fluxos de copiar e colar.
+const EMBEDDED = window.__CARTEIRA_ARTIFACT__ === true;
+
 const FAST_PAGES = 8; // leitura rápida: tabela, resumo, mudanças e desempenho ficam no começo
 import { VERDICTS } from './core/prompts.js';
 
@@ -29,6 +33,7 @@ const state = {
   anSkip: new Set(),    // carteiras desmarcadas na aba de análise
   manualText: {},       // respostas coladas (modo manual), por relatório
   showPages: new Set(), // relatórios com a página original aberta
+  manualRead: { type: 'acoes' }, // leitura de PDF pelo chat
   aporte: 1000,
   review: null,         // { key, text, sources } — opinião da IA sobre o último plano
   busy: false,
@@ -69,6 +74,15 @@ function h(tag, attrs = {}, ...children) {
 }
 const card = (title, right, ...body) => h('div', { class: 'card' }, h('div', { class: 'card-head' }, h('h2', {}, title), right ?? null), ...body);
 const kpi = (label, value, hint, cls = '') => h('div', { class: `card kpi ${cls}` }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value), hint ? h('div', { class: 'hint' }, hint) : null);
+/** Botão que pede um segundo clique para confirmar (o painel do Claude não mostra confirm()). */
+function confirmButton(label, confirmLabel, action, cls = 'btn ghost small') {
+  let armed = false; let timer;
+  const b = h('button', { class: cls, type: 'button', onclick: () => {
+    if (!armed) { armed = true; b.textContent = confirmLabel; b.classList.add('danger'); timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove('danger'); }, 4000); return; }
+    clearTimeout(timer); action();
+  } }, label);
+  return b;
+}
 const recBadge = (rec) => h('span', { class: `badge rec-${rec}` }, REC_LABEL[rec] ?? rec);
 const verdictBadge = (v) => (v ? h('span', { class: `badge ver-${v}`, title: 'Veredito da IA sobre a recomendação' }, `IA: ${VERDICTS[v]}`) : null);
 const tickerCell = (ticker, name) => h('td', { class: 'tk' }, ticker, name ? h('small', {}, name) : null);
@@ -160,12 +174,48 @@ function render() {
 }
 
 function emptyState() {
-  return h('section', { class: 'empty' },
-    h('h2', {}, 'Suba as carteiras recomendadas do mês'),
-    h('p', { class: 'muted' }, 'Envie os PDFs de Ações, FIIs e Internacional (pode ser os três de uma vez). A IA lê as tabelas e as teses e organiza tudo aqui. O tipo e o mês vêm do nome do arquivo, ex.: Carteira_Fiis_-_Outubro26.pdf.'),
-    hasKey() ? null : h('p', { class: 'notice' }, 'Antes, cole sua chave da API do Gemini em ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); setTab('settings'); } }, 'Configurações'), ' (é gratuita no Google AI Studio).'),
-    h('button', { class: 'btn primary', type: 'button', onclick: () => $('#fileInput').click() }, 'Escolher PDFs'),
-    h('p', { class: 'muted small' }, '🔒 Os dados ficam só neste navegador. Os PDFs vão apenas para a API do Gemini, com a sua chave.'));
+  return h('section', { class: 'stack' },
+    h('section', { class: 'empty' },
+      h('h2', {}, 'Suba as carteiras recomendadas do mês'),
+      EMBEDDED
+        ? h('p', { class: 'muted' }, 'Aqui no painel do Claude o app não consegue chamar a API do Gemini. Leia cada PDF pelo Gemini ou ChatGPT do site com o pedido pronto abaixo, ou importe um .json já extraído.')
+        : h('p', { class: 'muted' }, 'Envie os PDFs de Ações, FIIs e Internacional (pode ser os três de uma vez). A IA lê as tabelas e as teses e organiza tudo aqui. O tipo e o mês vêm do nome do arquivo, ex.: Carteira_Fiis_-_Outubro26.pdf.'),
+      !EMBEDDED && !hasKey() ? h('p', { class: 'notice' }, 'Para ler os PDFs pela API, cole sua chave do Gemini em ', h('a', { href: '#', onclick: (e) => { e.preventDefault(); setTab('settings'); } }, 'Configurações'), ' (é gratuita). Sem chave, use a leitura pelo chat abaixo.') : null,
+      h('div', { class: 'row', style: { 'justify-content': 'center' } },
+        EMBEDDED ? null : h('button', { class: 'btn primary', type: 'button', onclick: () => $('#fileInput').click() }, 'Escolher PDFs'),
+        h('button', { class: 'btn', type: 'button', onclick: () => $('#fileInput').click() }, 'Importar .json')),
+      h('p', { class: 'muted small' }, '🔒 Os dados ficam só neste navegador.')),
+    manualReadCard(true));
+}
+
+/** Leitura do PDF sem API: o usuário anexa o PDF num chat com o pedido pronto e cola o JSON aqui. */
+function manualReadCard(open = false) {
+  const mr = state.manualRead;
+  mr.month ??= state.month ?? new Date().toISOString().slice(0, 7);
+  const paste = h('textarea', { rows: 5, placeholder: 'Cole aqui a resposta do chat (o bloco JSON inteiro)…', oninput: (e) => { mr.text = e.target.value; } });
+  paste.value = mr.text ?? '';
+  return h('details', { class: 'card', open: open || EMBEDDED || null },
+    h('summary', { class: 'card-summary' }, h('b', {}, 'Ler um PDF pelo chat (sem API)'), h('span', { class: 'muted small' }, ' · grátis, pelo Gemini ou ChatGPT do site')),
+    h('div', { class: 'stack', style: { 'margin-top': '12px' } },
+      h('div', { class: 'row' },
+        h('select', { id: 'mrType', 'aria-label': 'Carteira', onchange: (e) => { mr.type = e.target.value; } }, TYPE_IDS.map((t) => h('option', { value: t, selected: mr.type === t }, ASSET_TYPES[t].label))),
+        h('input', { id: 'mrMonth', type: 'month', value: mr.month, 'aria-label': 'Mês', onchange: (e) => { mr.month = e.target.value; } }),
+        h('button', { class: 'btn small primary', type: 'button', onclick: async () => {
+          toast(await copyText(svc.manualExtractionPrompt(mr.type)) ? `Pedido de leitura (${ASSET_TYPES[mr.type].label}) copiado. Abra o chat, anexe o PDF e cole.` : 'Não consegui copiar.');
+        } }, '1 · Copiar pedido de leitura'),
+        CHAT_LINKS.map(([label, href]) => h('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer' }, label))),
+      h('p', { class: 'muted small' }, 'No chat: anexe o PDF (clipe ou arrastar), cole o pedido e envie. Depois copie o bloco JSON da resposta e cole abaixo.'),
+      paste,
+      h('div', { class: 'row' }, h('button', { class: 'btn small primary', type: 'button', onclick: () => {
+        try {
+          const res = svc.importManualReport(paste.value, { type: mr.type, month: mr.month });
+          mr.text = '';
+          state.month = mr.month; state.type = mr.type;
+          const bad = checkReport(res.report).filter((c) => !c.ok).length;
+          toast(`${ASSET_TYPES[mr.type].label}: ${res.report.assets.length} ativos importados${bad ? ` · ${bad} ponto(s) para conferir` : ''}.`);
+          setTab('reports');
+        } catch (e) { toast(e.message, true); }
+      } }, '2 · Importar leitura'))));
 }
 
 // ---------- 1 · Carteiras
@@ -193,7 +243,7 @@ function renderReports() {
   }));
 
   const r = reports.find((x) => x.type === state.type);
-  return [cards, r ? reportDetail(r, analyses) : null];
+  return [cards, r ? reportDetail(r, analyses) : null, manualReadCard(false)];
 }
 
 function reportDetail(r, analyses) {
@@ -209,7 +259,7 @@ function reportDetail(r, analyses) {
       h('div', { class: 'row' },
         h('button', { class: 'btn primary small', type: 'button', onclick: () => runAnalysis([r.id]) }, an ? 'Reanalisar com IA' : 'Analisar com IA'),
         h('button', { class: 'btn small', type: 'button', onclick: () => editReport(r) }, 'Corrigir dados'),
-        h('button', { class: 'btn ghost small', type: 'button', onclick: () => { if (confirm('Remover este relatório e a análise dele?')) { svc.removeReport(r.id); toast('Relatório removido.'); render(); } } }, 'Remover'))),
+        confirmButton('Remover', 'Clique de novo para remover', () => { svc.removeReport(r.id); toast('Relatório removido.'); render(); }))),
     r.summary ? h('p', { class: 'prose' }, r.summary) : null,
     r.macro.length ? h('div', { class: 'chips', style: { 'margin-top': '10px' } }, r.macro.map((m) => h('span', { class: 'chip' }, m))) : null);
 
@@ -272,8 +322,10 @@ function verifyCard(r) {
   return h('div', { class: 'card' },
     h('div', { class: 'card-head' },
       h('h2', {}, bad ? `Conferir a leitura · ${bad} ponto(s) de atenção` : 'Conferir a leitura · tudo certo'),
-      ex ? h('button', { class: 'btn small', type: 'button', onclick: () => { state.showPages.has(r.id) ? state.showPages.delete(r.id) : state.showPages.add(r.id); render(); } }, state.showPages.has(r.id) ? 'Esconder página' : 'Ver página original da tabela') : null),
-    h('p', { class: 'muted small', style: { 'margin-bottom': '8px' } }, ex
+      ex && !ex.manual ? h('button', { class: 'btn small', type: 'button', onclick: () => { state.showPages.has(r.id) ? state.showPages.delete(r.id) : state.showPages.add(r.id); render(); } }, state.showPages.has(r.id) ? 'Esconder página' : 'Ver página original da tabela') : null),
+    h('p', { class: 'muted small', style: { 'margin-bottom': '8px' } }, ex?.manual
+      ? `Lido pelo chat (copiar e colar)${where ? ` · ${where}` : ''}${ex.edited ? ' · corrigido à mão' : ''}. Para conferir, compare com o PDF aberto.`
+      : ex
       ? `Lido do PDF pelo ${ex.model} em ${ex.seconds} s · ${ex.pagesSent} de ${ex.pagesTotal} páginas enviadas${where ? ` · ${where}` : ''}${ex.edited ? ' · corrigido à mão' : ''}.`
       : 'Importado de um arquivo .json (não veio da leitura de um PDF).'),
     h('ul', { class: 'alert-list' }, checks.map((c) => h('li', { class: c.ok ? 'falta' : 'preco' }, `${c.ok ? '✓' : '!'} ${c.msg}`))),
@@ -385,7 +437,7 @@ function renderAnalysis() {
   const selected = reports.filter((r) => !state.anSkip.has(r.id)).map((r) => r.id);
   const calls = reports.reduce((s, r) => s + Math.ceil(r.assets.length / 5), 0);
 
-  const mode = svc.settings().analysisMode ?? 'manual';
+  const mode = EMBEDDED ? 'manual' : svc.settings().analysisMode ?? 'manual';
   const modeSwitch = h('div', { class: 'row' },
     [['manual', 'Copiar e colar (grátis, com pesquisa)'], ['api', 'Automático pela API']].map(([k, label]) => h('button', {
       class: `btn small${mode === k ? ' primary' : ''}`, type: 'button', onclick: () => { svc.updateSettings({ analysisMode: k }); render(); },
@@ -410,7 +462,7 @@ function renderAnalysis() {
     h('div', { class: 'stack' }, reports.map((r) => manualRow(r))),
   ];
 
-  const controls = card('Revisar as recomendações com IA', modeSwitch, mode === 'api' ? apiControls : manualControls);
+  const controls = card('Revisar as recomendações com IA', EMBEDDED ? null : modeSwitch, mode === 'api' ? apiControls : manualControls);
 
   const filter = h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Mostrar:'),
     [['all', 'Todos'], ['DISCORDA', 'Discorda'], ['PARCIAL', 'Em parte'], ['CONCORDA', 'Concorda']].map(([k, label]) => h('button', {
@@ -502,7 +554,7 @@ function renderMine() {
 
   const holdingsCard = card('Minhas posições', h('div', { class: 'row' },
     h('button', { class: 'btn small', type: 'button', onclick: pasteHoldings }, 'Colar lista'),
-    rows.length ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => { if (confirm('Apagar todas as posições?')) { svc.importHoldingsText('', { replace: true }); render(); } } }, 'Limpar') : null),
+    rows.length ? confirmButton('Limpar', 'Clique de novo para apagar tudo', () => { svc.importHoldingsText('', { replace: true }); render(); }) : null),
   addForm, h('div', { style: { 'margin-top': '14px' } }, table),
   h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Preço atual em branco = usa o preço da análise da IA ou do relatório. Internacional em US$, convertido a ${brl(settings.usdBrl)} (ajuste no Aporte).`));
 
@@ -591,7 +643,7 @@ function renderAporte() {
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
       h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, 'Total'), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Onde colocar o dinheiro', null, h('p', { class: 'muted' }, state.aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
-  const manualMode = (s.analysisMode ?? 'manual') === 'manual';
+  const manualMode = EMBEDDED || (s.analysisMode ?? 'manual') === 'manual';
   const askApi = async () => {
     if (!hasKey()) { toast('Configure a chave da API do Gemini primeiro.', true); return; }
     state.busy = true; render();
@@ -664,7 +716,7 @@ function renderSettings() {
   const modelSelect = h('select', {}, [...new Set([svc.model || DEFAULT_MODEL, ...MODEL_OPTIONS, ...usefulModels(state.models ?? [])])].map((m) => h('option', { value: m, selected: (svc.model || DEFAULT_MODEL) === m }, m)));
   const customModel = h('input', { type: 'text', placeholder: 'ou digite outro modelo (ex.: gemini-3.8-flash)', style: { flex: '1 1 260px' } });
 
-  const api = card('API do Gemini', null,
+  const api = EMBEDDED ? card('API do Gemini', null, h('p', { class: 'muted' }, 'Aqui no painel do Claude o app não consegue acessar a API do Gemini. Use a leitura e a análise por copiar e colar, que funcionam normalmente. Para usar a API, abra o app pelo atalho do Windows.')) : card('API do Gemini', null,
     h('div', { class: 'stack' },
       h('p', { class: 'muted small' }, 'Crie uma chave gratuita em ', h('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener noreferrer' }, 'aistudio.google.com/apikey'), '. Ela fica salva só neste navegador e não entra no backup.'),
       h('div', { class: 'row' }, keyInput,
@@ -683,7 +735,9 @@ function renderSettings() {
     h('div', { class: 'stack' },
       h('p', { class: 'muted small' }, 'Tudo fica no localStorage deste navegador. Para levar para outro aparelho, exporte o backup e restaure lá.'),
       h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', onclick: () => {
+        EMBEDDED ? h('button', { class: 'btn', type: 'button', onclick: async () => {
+          toast(await copyText(svc.exportBackup()) ? 'Backup copiado. Cole num arquivo de texto e salve como .json.' : 'Não consegui copiar o backup.');
+        } }, 'Copiar backup') : h('button', { class: 'btn', type: 'button', onclick: () => {
           const blob = new Blob([svc.exportBackup()], { type: 'application/json' });
           const a = h('a', { href: URL.createObjectURL(blob), download: `carteira-ia-backup-${new Date().toISOString().slice(0, 10)}.json` });
           a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -695,7 +749,7 @@ function renderSettings() {
           });
           input.click();
         } }, 'Restaurar backup'),
-        h('button', { class: 'btn ghost', type: 'button', onclick: () => { if (confirm('Apagar relatórios, análises e carteira deste navegador?')) { svc.clearAll(); toast('Dados apagados.'); render(); } } }, 'Apagar tudo')),
+        confirmButton('Apagar tudo', 'Clique de novo para apagar relatórios, análises e carteira', () => { svc.clearAll(); toast('Dados apagados.'); render(); }, 'btn ghost')),
       h('p', { class: 'muted small' }, 'Também dá para subir um relatório já extraído em .json (mesmo formato do "Corrigir dados", com "type" e "month") pelo botão Subir relatórios.')));
 
   return [api, data];
@@ -720,6 +774,12 @@ function openTextDialog({ title, hint, value, onSave, replaceOption = false }) {
 // ---------- upload
 let pending = [];
 function openUpload(files) {
+  if (EMBEDDED) {
+    const pdfs = [...files].filter((f) => !/\.json$/i.test(f.name));
+    if (pdfs.length) toast('Aqui no painel o app não lê PDFs pela API. Use "Ler um PDF pelo chat" na aba Carteiras.', true);
+    files = [...files].filter((f) => /\.json$/i.test(f.name));
+    if (!files.length) { setTab('reports'); return; }
+  }
   pending = [...files].map((file) => {
     const isJson = /\.json$/i.test(file.name) || file.type === 'application/json';
     return { file, isJson, type: detectType(file.name) ?? 'acoes', month: detectMonth(file.name) ?? new Date().toISOString().slice(0, 7) };
@@ -799,4 +859,5 @@ document.addEventListener('drop', (e) => {
   openUpload(files);
 });
 
+if (EMBEDDED) { $('#uploadBtn').textContent = 'Importar .json'; $('#fileInput').accept = '.json,application/json'; }
 render();

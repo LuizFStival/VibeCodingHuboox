@@ -2,7 +2,7 @@
 // O cliente do Gemini é passado de fora (createGemini), o que permite testar com um fake.
 
 import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber } from './report.js';
-import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, analysisPrompt, manualAnalysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
+import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, manualExtractionPrompt, analysisPrompt, manualAnalysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
 import { parseJsonLoose } from './gemini.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
 
@@ -28,7 +28,7 @@ export function createService(store) {
       const replaced = data.reports.some((r) => r.id === id);
       data.reports = data.reports.filter((r) => r.id !== id);
       data.reports.push({ id, filename, importedAt: new Date().toISOString(), ...normalized });
-      if (!normalized.extraction) store.removePages?.(id);
+      if (!normalized.extraction?.pagesSent) store.removePages?.(id);
       // A análise antiga se refere a outros dados: descarta só os tickers que saíram.
       const an = data.analyses[id];
       if (an) for (const t of Object.keys(an.items)) if (!normalized.assets.some((a) => a.ticker === t)) delete an.items[t];
@@ -73,6 +73,16 @@ export function createService(store) {
       return { ...saved, report: normalized };
     },
     tablePages: (id) => store.pages(id),
+
+    /** Leitura do PDF por um chat: pedido pronto e importação da resposta colada. */
+    manualExtractionPrompt: (type) => manualExtractionPrompt(type),
+    importManualReport(text, { type, month }) {
+      let raw;
+      try { raw = parseJsonLoose(text); } catch (e) { throw new Error(`Não encontrei o JSON na resposta colada (${e.message}) Copie a resposta inteira do chat.`); }
+      const normalized = normalizeReport(raw, { type, month });
+      normalized.extraction = { model: 'chat (copiar e colar)', manual: true, at: new Date().toISOString() };
+      return { ...saveReport(normalized, { filename: 'lido pelo chat' }), report: normalized };
+    },
 
     importReportJson(json, { filename = 'importado.json' } = {}) {
       const items = Array.isArray(json) ? json : Array.isArray(json?.reports) ? json.reports : [json];

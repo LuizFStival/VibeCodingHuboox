@@ -71,7 +71,7 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 /* Topbar & tabs */
 .topbar {
   display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-  padding: 16px max(16px, calc((100vw - 1200px) / 2));
+  padding: 16px max(16px, env(safe-area-inset-right, 0px), calc((100vw - 1200px) / 2)) 16px max(16px, env(safe-area-inset-left, 0px), calc((100vw - 1200px) / 2));
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .brand { display: flex; gap: 12px; align-items: center; }
@@ -101,7 +101,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 
 .tabs {
   display: flex; gap: 4px; overflow-x: auto;
-  padding: 8px max(16px, calc((100vw - 1200px) / 2)) 0;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px), calc((100vw - 1200px) / 2)) 0 max(16px, env(safe-area-inset-left, 0px), calc((100vw - 1200px) / 2));
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
 .tabs button {
@@ -110,7 +110,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 
-main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 60px; }
+main { max-width: 1200px; margin: 0 auto; padding-block: 20px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .tab-panel { display: grid; gap: 16px; }
 
 /* Jobs (progresso das chamadas à IA) */
@@ -261,3 +261,5 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .page-shots { display: grid; gap: 12px; margin-top: 12px; }
 .page-shots figure { margin: 0; display: grid; gap: 4px; }
 .page-shots img { width: 100%; max-width: 900px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.btn.danger { border-color: var(--sell); color: var(--sell); }
+details.card > summary.card-summary { cursor: pointer; list-style-position: inside; }
