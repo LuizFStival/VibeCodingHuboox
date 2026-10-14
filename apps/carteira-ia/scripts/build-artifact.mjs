@@ -31,5 +31,8 @@ ${js}
 `);
 // O pdf.js vai como arquivo ao lado da página (publicar com `files`: vendor/pdfjs/*).
 mkdirSync(`${out}vendor/pdfjs`, { recursive: true });
-for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs', 'LICENSE']) writeFileSync(`${out}vendor/pdfjs/${f}`, readFileSync(`${root}public/vendor/pdfjs/${f}`));
+// O publicador recusa caracteres de controle crus; no código minificado eles só aparecem
+// dentro de strings, onde \xNN é o mesmo valor.
+const escapeControls = (txt) => txt.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
+for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs', 'LICENSE']) writeFileSync(`${out}vendor/pdfjs/${f}`, escapeControls(readFileSync(`${root}public/vendor/pdfjs/${f}`, 'utf8')));
 console.log(`dist-artifact/index.html pronto (${Math.round(readFileSync(`${out}index.html`).length / 1024)} KB)`);
