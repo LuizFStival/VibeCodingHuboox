@@ -102,9 +102,17 @@ export function toGeminiError(status, payload, model, { search = false } = {}) {
     return new GeminiError(`O modelo ${model} recusou a pesquisa do Google: ${msg}`, { status, searchUnsupported: true, raw: msg });
   }
   if (status >= 500 || status === 408) {
-    return new GeminiError(`Instabilidade na API do Gemini (${status}).`, { status, retryAfterMs, retryable: true, raw: msg });
+    const e = new GeminiError(`O Gemini está sobrecarregado ou instável agora (${status}).`, { status, retryAfterMs, retryable: true, raw });
+    e.overloaded = true;
+    return e;
   }
   return new GeminiError(`Gemini (${status}): ${msg}`, { status, raw: msg });
+}
+
+/** Outro modelo bom para o app, diferente do atual (usado quando o atual está sobrecarregado). */
+export function alternativeModel(models, current) {
+  const list = usefulModels(models).filter((m) => m !== current && !/pro/.test(m));
+  return list.find((m) => /^gemini-[\d.]+-flash$/.test(m)) ?? list.find((m) => /flash/.test(m)) ?? null;
 }
 
 /** Menor raciocínio aceito por cada família de modelo. */
@@ -165,6 +173,7 @@ export function createGemini({
     if (search) body.tools = [{ google_search: {} }];
 
     let switched = false;
+    let overloadSwitched = false;
     const run = async () => {
       for (let attempt = 0; ; attempt++) {
         if (!parallel) {
@@ -195,7 +204,22 @@ export function createGemini({
             }
             e.message += ' Escolha outro em Configurações ("Ver modelos da minha chave").';
           }
-          if (!e.retryable || attempt >= MAX_RETRIES) throw e;
+          if (e.overloaded && attempt >= 1 && !overloadSwitched) {
+            // Sobrecarga é por modelo: depois de 2 falhas, tenta outro Flash da chave (só nesta chamada).
+            overloadSwitched = true;
+            const next = alternativeModel(await listModels().catch(() => []), model);
+            if (next) {
+              onRetry?.(`${model} sobrecarregado; tentando com ${next}…`);
+              model = next;
+              if (body.generationConfig.thinkingConfig) body.generationConfig.thinkingConfig = thinkingFor(next);
+              attempt = 0;
+              continue;
+            }
+          }
+          if (!e.retryable || attempt >= MAX_RETRIES) {
+            if (e.overloaded) e.message += ' Tente de novo em alguns minutos, ou suba só este PDF outra vez.';
+            throw e;
+          }
           const ms = Math.min(MAX_WAIT_MS, e.retryAfterMs ?? 2000 * 2 ** attempt) + 500;
           onRetry?.(`${e.message} Tentando de novo em ${Math.round(ms / 1000)} s (${attempt + 1}/${MAX_RETRIES})…`);
           await sleep(ms, signal);

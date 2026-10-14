@@ -3,8 +3,8 @@
 // de envio direto da API. Redimensionadas, as páginas ficam em poucos MB no total.
 
 const MAX_PAGES = 40;
-const TARGET_WIDTH = 1240; // px — legível para tabelas pequenas
-const QUALITY = 0.8;
+const TARGET_WIDTH = 1100; // px — ainda legível para as tabelas, com envio menor
+const QUALITY = 0.75;
 
 let pdfjs;
 async function lib() {

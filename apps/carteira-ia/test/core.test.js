@@ -389,3 +389,28 @@ test('leitura rápida: pouco raciocínio, fora da fila, e tenta de novo se o mod
   assert.equal(bodies.length, 2);
   assert.ok(!bodies[1].generationConfig.thinkingConfig);
 });
+
+test('503 repetido: troca para outro Flash da chave e conclui', async () => {
+  const used = []; const notes = [];
+  const fetch = async (url) => {
+    if (!url.includes(':generateContent')) return { ok: true, status: 200, json: async () => ({ models: USER_MODELS.map((m) => ({ name: `models/${m}`, supportedGenerationMethods: ['generateContent'] })) }) };
+    const m = url.match(/models\/([^:]+):/)[1]; used.push(m);
+    if (m === 'gemini-flash-latest') return errBody(503, { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded. Please try again later.' });
+    return okBody('{"ok":1}');
+  };
+  const g = createGemini({ apiKey: 'k', model: 'gemini-flash-latest', minIntervalMs: 0, sleep: async () => {}, fetch });
+  const res = await g.generate({ parts: [{ text: 'x' }], fast: true, parallel: true, onRetry: (n) => notes.push(n) });
+  assert.deepEqual(res.json(), { ok: 1 });
+  assert.deepEqual(used, ['gemini-flash-latest', 'gemini-flash-latest', 'gemini-3.8-flash']);
+  assert.ok(notes.some((n) => /sobrecarregado; tentando com gemini-3\.8-flash/.test(n)));
+});
+
+test('leitura rápida não pede teses', async () => {
+  const svc = createSvc(createStore(memoryStorage()));
+  let prompt = '';
+  const fake = { model: 'f', async generate(req) { prompt = req.parts[0].text; return { json: () => fixture('acoes.json') }; } };
+  await svc.extractReport(fake, { images: [{ mimeType: 'image/jpeg', data: 'AA==' }], pagesTotal: 17, type: 'acoes', month: '2026-10' });
+  assert.match(prompt, /Deixe "thesis" vazio/);
+  await svc.extractReport(fake, { images: [{ mimeType: 'image/jpeg', data: 'AA==' }], pagesTotal: 1, type: 'acoes', month: '2026-10' });
+  assert.match(prompt, /tese de cada ativo/);
+});

@@ -55,7 +55,7 @@ export const EXTRACTION_SCHEMA = S('OBJECT', {
   required: ['summary', 'assets'],
 });
 
-export function extractionPrompt(type) {
+export function extractionPrompt(type, { withThesis = true } = {}) {
   const t = ASSET_TYPES[type];
   return [
     `Você recebe as páginas (imagens) de um relatório mensal de carteira recomendada de ${t.label}.`,
@@ -64,7 +64,9 @@ export function extractionPrompt(type) {
     '- Percentuais como número em %: "12,00%" → 12. Preços como número: "R$ 53,15" → 53.15, "US$ 707,54" → 707.54.',
     '- Recomendação: COMPRAR, AGUARDAR, MANTER ou VENDER, conforme o selo da tabela.',
     '- Inclua ativos com recomendação de venda (peso 0) e cite-os em "changes".',
-    '- Para a tese de cada ativo, use as páginas de descrição do próprio relatório; resuma em português.',
+    withThesis
+      ? '- Para a tese de cada ativo, use as páginas de descrição do próprio relatório; resuma em português.'
+      : '- Deixe "thesis" vazio (estas são só as primeiras páginas) e seja direto: o resumo do mês em até 5 frases.',
     '- Ignore marcas d\'água e qualquer dado pessoal (nome, e-mail, CPF de assinante). Nunca os reproduza.',
     '- Cada imagem vem depois de um rótulo "Página N". Informe em "page" a página onde achou cada ativo e em "tablePages" as páginas da tabela.',
     '- Não invente valores: se não estiver no relatório, use null. Copie os números exatamente como estão na tabela.',

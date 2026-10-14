@@ -777,7 +777,7 @@ $('#uploadDialog').addEventListener('close', async () => {
       j.done(`${label}: ${res.report.assets.length} ativos em ${Math.round((Date.now() - t0) / 1000)} s${bad ? ` · ${bad} ponto(s) para conferir` : ' · conferência ok'}${res.replaced ? ' (substituiu o anterior)' : ''}.`);
       lastMonth = p.month; lastType = p.type;
     } catch (e) {
-      j.fail(`${label}: ${e.message}`);
+      j.fail(`${label}: ${e.message}${e.raw && e.raw !== e.message ? ` — resposta do Google: ${e.raw.slice(0, 300)}` : ''}`);
     }
     render();
   }));

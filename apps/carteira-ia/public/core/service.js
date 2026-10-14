@@ -51,9 +51,10 @@ export function createService(store) {
      * as páginas da tabela ficam guardadas para conferência.
      */
     async extractReport(gemini, { images, type, month, filename, signal, onStatus, pagesTotal }) {
+      const partial = pagesTotal && images.length < pagesTotal;
       const t0 = Date.now();
       const res = await gemini.generate({
-        parts: [{ text: extractionPrompt(type) }, ...images.flatMap((img, i) => [{ text: `Página ${i + 1}` }, { inlineData: img }])],
+        parts: [{ text: extractionPrompt(type, { withThesis: !partial }) }, ...images.flatMap((img, i) => [{ text: `Página ${i + 1}` }, { inlineData: img }])],
         schema: EXTRACTION_SCHEMA,
         temperature: 0,
         fast: true,
