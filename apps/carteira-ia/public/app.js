@@ -788,9 +788,10 @@ function renderAporte() {
       h('label', { class: 'field' }, 'Valor do aporte (R$)', h('input', { id: 'aporteAmount', class: 'input-money', type: 'number', min: 0, step: 0.01, value: String(aporte), onchange: (e) => { svc.updateSettings({ aporteAmount: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } })),
       TYPE_IDS.map((t) => h('label', { class: 'field' }, `Alvo ${ASSET_TYPES[t].short} (%)`, h('input', { type: 'number', min: 0, max: 100, step: 5, value: String(Math.round((s.targets[t] ?? 0) * 100)), onchange: setTarget(t) }))),
       h('label', { class: 'field' }, 'Dólar (R$)', h('input', { type: 'number', min: 0, step: 0.01, value: String(s.usdBrl), onchange: (e) => { svc.updateSettings({ usdBrl: Number(e.target.value) || 0 }); render(); } })),
-      h('label', { class: 'field', title: 'Dólares parados na corretora no exterior (Nomad, Avenue…): pagam as compras do internacional sem nova remessa' }, 'Dólar já na corretora (US$)', h('input', { id: 'usdCash', type: 'number', min: 0, step: 0.01, value: String(s.usdCash ?? 0), onchange: (e) => { svc.updateSettings({ usdCash: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } }))),
-    Number(s.usdCash) > 0 ? h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Os US$ ${num(s.usdCash)} (≈ ${brl(s.usdCash * s.usdBrl)}) pagam o internacional e contam no seu patrimônio; os reais do aporte ficam para ações e FIIs.`, ' ',
-      h('label', { class: 'check', style: { display: 'inline-flex' } }, h('input', { type: 'checkbox', checked: s.remitBRL === true, onchange: (e) => { svc.updateSettings({ remitBRL: e.target.checked }); render(); } }), 'Se faltar no exterior, enviar reais (IOF 1,1% + spread)')) : null,
+      h('label', { class: 'field', title: 'Dólares parados na conta de investimento no exterior (Nomad, Avenue…): compram internacional sem nova remessa' }, 'Dólar já na corretora (US$)', h('input', { id: 'usdCash', type: 'number', min: 0, step: 0.01, value: String(s.usdCash ?? 0), onchange: (e) => { svc.updateSettings({ usdCash: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } })),
+      h('label', { class: 'field', title: 'Reais que você já separou em meses anteriores para mandar ao exterior quando passar do envio mínimo' }, 'Caixinha do dólar (R$)', h('input', { id: 'dollarReserve', type: 'number', min: 0, step: 0.01, value: String(s.dollarReserve ?? 0), onchange: (e) => { svc.updateSettings({ dollarReserve: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } })),
+      h('label', { class: 'field', title: 'Valor mínimo para mandar dinheiro à conta de investimento no exterior (Nomad: US$ 50). 0 = envia todo mês' }, 'Envio mínimo p/ exterior (US$)', h('input', { id: 'minRemitUSD', type: 'number', min: 0, step: 1, value: String(s.minRemitUSD ?? 50), onchange: (e) => { svc.updateSettings({ minRemitUSD: Math.max(0, Math.round((Number(e.target.value) || 0) * 100) / 100) }); render(); } }))),
+    h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Internacional: o dólar que já está na corretora compra direto. A parte do internacional em reais junta na caixinha do dólar até passar de US$ ${num(s.minRemitUSD ?? 50)}; aí o app propõe enviar tudo de uma vez. Ações e FIIs usam só os reais.`),
     Math.abs(sumTargets - 1) > 0.001 ? h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, `Os alvos somam ${Math.round(sumTargets * 100)}% — são normalizados para 100%.`) : null,
     h('div', { class: 'row', style: { 'margin-top': '12px' } },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAi, onchange: (e) => { svc.updateSettings({ respectAi: e.target.checked }); render(); } }), 'Não aportar onde a IA discorda'),
@@ -804,7 +805,7 @@ function renderAporte() {
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.remitBRL, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.dollarReserve, s.minRemitUSD, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
   if (state.keepProposal) { state.proposedKey = paramsKey; state.keepProposal = false; }
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
@@ -814,26 +815,31 @@ function renderAporte() {
   if (!proposed) return [form, proposeCard];
 
   const kpis = h('div', { class: 'grid kpis', id: 'plano' },
-    kpi('Aporte', brl(plan.amount), plan.usdCash > 0 ? `${brl(plan.brlAmount)} + US$ ${num(plan.usdCash)} já no exterior` : null, 'hero'),
-    kpi('Investido', brl(plan.invested), `${plan.lines.length} ativos`),
-    plan.usdCash > 0
-      ? kpi('Sobra', brl(plan.brlLeftover), `em reais · sobra em dólar US$ ${num(plan.usdLeftover)}${plan.remitted > 1 ? ` · enviar ${brl(plan.remitted)} ao exterior` : ''}`)
-      : kpi('Sobra', brl(plan.leftover), 'não fecha cota inteira'));
+    kpi('Aporte em reais', brl(plan.brlAmount), plan.usdCash > 0 || plan.reserve > 0 ? [plan.usdCash > 0 ? `+ US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? `+ ${brl(plan.reserve)} na caixinha` : ''].filter(Boolean).join(' ') : null, 'hero'),
+    kpi('Comprar agora', brl(plan.invested), `${plan.lines.length} ativos`),
+    plan.remitNow
+      ? kpi('Enviar ao exterior', brl(plan.remitted), `≈ US$ ${num(plan.remitted / s.usdBrl)} · passou do mínimo de US$ ${num(plan.minRemit)}`)
+      : plan.toReserve > 0.5
+      ? kpi('Guardar na caixinha do dólar', brl(plan.toReserve), `fica com ${brl(plan.reserveAfter)} ≈ US$ ${num(plan.reserveAfter / s.usdBrl)} · faltam US$ ${num(Math.max(0, plan.minRemit - plan.reserveAfter / s.usdBrl))} (≈ ${brl(Math.max(0, plan.minRemit * s.usdBrl - plan.reserveAfter))}) para enviar`)
+      : null,
+    kpi('Sobra', brl(plan.brlLeftover), `em reais${plan.usdLeftover > 0.01 ? ` · US$ ${num(plan.usdLeftover)} ficam na corretora` : ''}`));
 
   // O balanço que a conta usou: quanto cada classe tem, quanto deveria ter depois do aporte e quanto falta.
-  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)}${plan.usdCash > 0 ? ` (inclui US$ ${num(plan.usdCash)} em caixa)` : ''} + aporte ${brl(plan.brlAmount, 0)} = ${brl(plan.totalAfter, 0)}`),
+  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)}${plan.usdCash > 0 || plan.reserve > 0 ? ` (inclui ${[plan.usdCash > 0 ? `US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? `${brl(plan.reserve, 0)} na caixinha` : ''].filter(Boolean).join(' e ')})` : ''} + aporte ${brl(plan.brlAmount, 0)} = ${brl(plan.totalAfter, 0)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Classe', 'Hoje', 'Alvo', 'Valor no alvo', 'Falta para o alvo', 'Recebe agora', 'Por quê'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.classes.map((c) => h('tr', {},
         h('td', {}, h('span', { class: `dot type-${c.type}` }), c.label),
-        h('td', { class: 'num' }, `${brl(c.before, 0)} (${pct(c.pctBefore)})`, c.cash > 0 ? h('div', { class: 'muted small' }, `com ${brl(c.cash, 0)} em caixa`) : null),
+        h('td', { class: 'num' }, `${brl(c.before, 0)} (${pct(c.pctBefore)})`, c.cash > 0 ? h('div', { class: 'muted small' }, `com ${brl(c.cash, 0)} já separados (corretora/caixinha)`) : null),
         h('td', { class: 'num' }, pct(c.target, 0)),
         h('td', { class: 'num' }, brl(c.targetValue, 0)),
         h('td', { class: 'num' }, c.need > 1 ? brl(c.need, 0) : '—'),
         h('td', { class: `num ${c.added > 0 ? 'pos' : ''}` }, c.added > 0 ? brl(c.added, 0) : 'R$ 0'),
         h('td', { class: 'small', style: { 'white-space': 'normal' } },
           !c.hasReport ? 'sem relatório neste mês'
-            : c.cash > 0 && c.added > 0 ? `usa o dólar que já está na corretora (${brl(Math.min(c.cash, c.added), 0)}), em vez de deixá-lo parado${c.added > c.cash + 1 ? '; o resto vai por remessa' : ''}`
+            : c.type === 'internacional' && plan.remitNow ? `envia ${brl(plan.remitted, 0)} ao exterior (passou do mínimo de US$ ${num(plan.minRemit)})${plan.usdCash > 0 ? ' e usa o dólar que já está na corretora' : ''}`
+            : c.type === 'internacional' && plan.toReserve > 0.5 ? `guarda ${brl(plan.toReserve, 0)} na caixinha do dólar (abaixo do envio mínimo)${c.added > 0 ? `; compra agora só com o dólar que já está na corretora` : ''}`
+            : c.type === 'internacional' && c.added > 0 && plan.usdCash > 0 ? 'usa o dólar que já está na corretora, em vez de deixá-lo parado'
             : c.need <= 1 ? 'já está no alvo (ou acima): não precisa de dinheiro este mês'
             : c.added <= 0 ? 'falta dinheiro, mas nenhum ativo da classe está liberado para compra (veja abaixo)'
             : c.added < c.need * 0.95 - 5 ? 'recebe parte do que falta; o resto nos próximos aportes' : 'recebe o que falta (a diferença é o arredondamento das cotas)')))))),
@@ -885,7 +891,19 @@ function renderAporte() {
       ov.include.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Incluídos por você:'), ov.include.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `${t} ✕`))) : null,
       ov.exclude.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Tirados por você:'), ov.exclude.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `desfazer ${t}`))) : null));
 
-  return [form, proposeCard, kpis, balance, notices, lines, adjust, attention, h('div', { class: 'grid two' }, classes, review)];
+  // Depois de executar as compras, guarda a caixinha e o dólar que sobrou para o próximo mês.
+  const nextUsd = Math.round(plan.usdLeftover * 100) / 100;
+  const nextReserve = Math.round(plan.reserveAfter * 100) / 100;
+  const cashChanged = Math.abs(nextUsd - (Number(s.usdCash) || 0)) > 0.005 || Math.abs(nextReserve - (Number(s.dollarReserve) || 0)) > 0.005;
+  const register = cashChanged ? h('div', { class: 'card row' },
+    h('button', { class: 'btn', type: 'button', onclick: () => {
+      svc.updateSettings({ usdCash: nextUsd, dollarReserve: nextReserve });
+      toast(`Para o próximo mês: caixinha ${brl(nextReserve)} e US$ ${num(nextUsd)} na corretora.`);
+      render();
+    } }, 'Fiz este aporte: atualizar caixinha e dólar'),
+    h('span', { class: 'muted small' }, `Depois de comprar${plan.remitNow ? ' e enviar o dinheiro' : ''}: a caixinha passa a ${brl(nextReserve)} e o dólar na corretora a US$ ${num(nextUsd)}. Lembre de atualizar as posições em Minha carteira.`)) : null;
+
+  return [form, proposeCard, kpis, register, balance, notices, lines, adjust, attention, h('div', { class: 'grid two' }, classes, review)];
 }
 
 /** Tira/inclui um ativo da proposta do mês e recalcula na hora, mantendo a proposta aberta. */

@@ -557,20 +557,35 @@ test('dólar já na corretora paga o internacional; reais ficam no Brasil', () =
     normalizeReport({ assets: [{ ticker: 'AAAA3', allocationPct: 100, price: 10, ceilingPrice: 20, recommendation: 'COMPRAR' }] }, { type: 'acoes', month: '2026-10' }),
     normalizeReport({ assets: [{ ticker: 'USA', allocationPct: 100, price: 50, ceilingPrice: 80, recommendation: 'COMPRAR' }] }, { type: 'internacional', month: '2026-10' }),
   ];
+  // Caixa lá fora cobre o alvo do internacional: os reais vão todos para o Brasil.
   const st = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, maxOrders: 0, maxNew: -1, usdCash: 100, fractionalIntl: true };
-  const plan = planAporte({ amount: 1000, holdings: [], reports: r, settings: st });
+  const plan = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, targets: { acoes: 0.7, fiis: 0, internacional: 0.3 } } });
   const intl = plan.lines.find((l) => l.ticker === 'USA');
-  const br = plan.lines.find((l) => l.ticker === 'AAAA3');
   assert.ok(Math.abs(intl.amount - 500) < 1, 'os US$ 100 (R$ 500) viram internacional');
-  assert.equal(br.amount, 1000, 'os reais vão todos para o Brasil');
+  assert.equal(plan.lines.find((l) => l.ticker === 'AAAA3').amount, 1000, 'os reais vão todos para o Brasil');
   assert.equal(plan.remitted, 0);
-  assert.ok(plan.usdLeftover < 0.01);
+  assert.equal(plan.toReserve, 0);
   assert.equal(plan.totalBefore, 500, 'o caixa em dólar conta no patrimônio');
-  // Sem caixa suficiente e com remessa liberada, parte dos reais vai para fora.
-  const rem = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, usdCash: 10, remitBRL: true } });
-  assert.ok(rem.remitted > 100 && rem.warnings.some((w) => /enviados ao exterior/.test(w)));
-  // Sem remessa, os reais não compram internacional.
-  const no = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, usdCash: 10 } });
-  assert.ok(Math.abs(no.lines.find((l) => l.ticker === 'USA').amount - 50) < 1);
-  assert.equal(no.remitted, 0);
+});
+
+test('caixinha do dólar: guarda a parte do internacional até dar o envio mínimo', () => {
+  const r = [
+    normalizeReport({ assets: [{ ticker: 'AAAA3', allocationPct: 100, price: 10, ceilingPrice: 20, recommendation: 'COMPRAR' }] }, { type: 'acoes', month: '2026-10' }),
+    normalizeReport({ assets: [{ ticker: 'USA', allocationPct: 100, price: 50, ceilingPrice: 80, recommendation: 'COMPRAR' }] }, { type: 'internacional', month: '2026-10' }),
+  ];
+  const st = { targets: { acoes: 0.8, fiis: 0, internacional: 0.2 }, usdBrl: 5, maxOrders: 0, maxNew: -1, fractionalIntl: true, minRemitUSD: 50 };
+  // 20% de R$ 1.000 = R$ 200 ≈ US$ 40 < 50: vai para a caixinha, sem compra no exterior.
+  const m1 = planAporte({ amount: 1000, holdings: [], reports: r, settings: st });
+  assert.ok(!m1.lines.some((l) => l.type === 'internacional'));
+  assert.ok(Math.abs(m1.toReserve - 200) < 0.01 && Math.abs(m1.reserveAfter - 200) < 0.01);
+  assert.ok(m1.lines.find((l) => l.ticker === 'AAAA3').amount <= 800, 'o Brasil não pega a parte do internacional');
+  assert.ok(m1.warnings.some((w) => /caixinha do dólar/.test(w)));
+  // Meses depois, com R$ 300 guardados (≈ US$ 60): passa do mínimo, envia tudo e compra.
+  const m2 = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, dollarReserve: 300 } });
+  assert.ok(m2.remitNow && m2.remitted > 250);
+  assert.ok(Math.abs(m2.lines.find((l) => l.ticker === 'USA').amount - m2.remitted) < 1);
+  assert.equal(m2.reserveAfter, 0, 'a caixinha zera quando envia');
+  // Envio mínimo 0: manda todo mês.
+  const now = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, minRemitUSD: 0 } });
+  assert.ok(now.remitNow && now.lines.some((l) => l.ticker === 'USA'));
 });

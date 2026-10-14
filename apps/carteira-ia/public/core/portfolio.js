@@ -29,7 +29,8 @@ export const DEFAULT_SETTINGS = {
   maxNew: 2,            // no máximo N posições novas por aporte
   aporteAmount: 757.4,  // valor padrão do aporte do mês (editável, fica salvo)
   usdCash: 0,           // dólares já parados na corretora no exterior: pagam as compras do internacional
-  remitBRL: false,      // se o caixa em dólar não bastar, enviar reais para o exterior (IOF + spread)
+  dollarReserve: 0,     // reais guardados na "caixinha do dólar" esperando o envio mínimo
+  minRemitUSD: 50,      // envio mínimo para o exterior (Nomad: US$ 50); 0 = envia todo mês
 };
 
 /** ticker → { ticker, type, asset, analysis } a partir dos relatórios do mês. */
@@ -157,9 +158,12 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const brl = Math.max(0, Number(amount) || 0); // reais do aporte
   // Caixa em dólar já no exterior: faz parte do patrimônio e paga o internacional sem remessa.
   const usdCash = Math.max(0, Number(settings.usdCash) || 0);
-  const usdCashBRL = usdCash * (Number(settings.usdBrl) || 0);
-  const remit = settings.remitBRL === true;
-  const totalBefore = cmp.total + usdCashBRL;
+  const usdBrl = Number(settings.usdBrl) || 0;
+  const usdCashBRL = usdCash * usdBrl;
+  // Caixinha do dólar: a parte do internacional em reais junta aqui até dar o envio mínimo.
+  const reserve = Math.max(0, Number(settings.dollarReserve) || 0);
+  const minRemit = settings.minRemitUSD === undefined ? 50 : Math.max(0, Number(settings.minRemitUSD) || 0);
+  const totalBefore = cmp.total + usdCashBRL + reserve;
   const totalAfter = totalBefore + brl;
 
   const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [], user: [] };
@@ -202,18 +206,24 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     classItems.push({ key: c.type, current: c.value, target: totalAfter * targets[c.type], weight: targets[c.type], eligible, report });
   }
   const intlItem = classItems.find((c) => c.key === 'internacional');
-  // split: dólar só compra internacional e real só compra Brasil (sem remessa).
-  const split = usdCashBRL > 0 && Boolean(intlItem) && !remit;
-  let perClass;
-  if (usdCashBRL > 0 && intlItem) {
-    const withCash = classItems.map((c) => (c.key === 'internacional' ? { ...c, current: c.current + usdCashBRL } : c));
-    perClass = allocate(brl, remit ? withCash : withCash.filter((c) => c.key !== 'internacional'));
-    perClass.set('internacional', (perClass.get('internacional') ?? 0) + usdCashBRL);
+  // Dois bolsos: o internacional só gasta dólar (o caixa lá fora + a remessa do mês, se houver);
+  // ações e FIIs só gastam reais.
+  const split = Boolean(intlItem);
+  let perClass; let intlShare = 0; let pending = reserve; let remitNow = false;
+  if (intlItem) {
+    // O que já está lá fora ou na caixinha conta como internacional para a divisão entre classes.
+    perClass = allocate(brl, classItems.map((c) => (c.key === 'internacional' ? { ...c, current: c.current + usdCashBRL + reserve } : c)));
+    intlShare = perClass.get('internacional') ?? 0;
+    pending = reserve + intlShare;
+    remitNow = pending > 0.01 && usdBrl > 0 && pending / usdBrl >= minRemit - 1e-9;
+    perClass.set('internacional', usdCashBRL + (remitNow ? pending : 0));
   } else {
     perClass = allocate(brl, classItems);
     if (usdCashBRL > 0) warnings.push(`Há US$ ${usdCash.toFixed(2).replace('.', ',')} na corretora no exterior, mas nenhum ativo internacional pode ser comprado este mês: o caixa fica parado lá.`);
   }
-  amount = brl + (intlItem ? usdCashBRL : 0); // tudo o que pode ser investido agora
+  const brlForBR = brl - intlShare;
+  const usdPool = intlItem ? usdCashBRL + (remitNow ? pending : 0) : 0;
+  amount = brlForBR + usdPool; // tudo o que pode ser investido agora
   const poolOf = (l) => (split && l.type === 'internacional' ? 'usd' : 'brl');
 
   // 2) dentro de cada classe, por SEGMENTO (logístico, papel, bancos…): o dinheiro vai para os
@@ -328,10 +338,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     }
     lines.length = 0; lines.push(...kept);
     // Classe com fatia pequena (menos de 10%) não ganha vaga: o dinheiro dela vai para os escolhidos.
-    //    Com caixa em dólar (sem remessa), real só vai para Brasil e dólar só para o internacional.
+    //    Real só vai para Brasil e dólar só para o internacional.
     for (const pool of split ? ['brl', 'usd'] : ['brl']) {
       const mine = kept.filter((l) => !split || poolOf(l) === pool);
-      const lost = (split ? (pool === 'usd' ? usdCashBRL : brl) : amount) - sumIdeal(mine);
+      const lost = (split ? (pool === 'usd' ? usdPool : brlForBR) : amount) - sumIdeal(mine);
       if (lost > 0.01 && mine.length) { const base = sumIdeal(mine); for (const l of mine) l.ideal += base ? lost * (l.ideal / base) : lost / mine.length; }
     }
     queue.push(...dropped.map((l) => l.ticker));
@@ -339,8 +349,8 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   }
 
   // 3) cotas: arredonda para baixo e usa a sobra comprando cotas inteiras onde mais falta.
-  //    Com caixa em dólar (sem remessa), reais e dólares são dois bolsos separados.
-  const left = split ? { brl, usd: usdCashBRL } : { brl: amount, usd: 0 };
+  //    Reais e dólares são dois bolsos separados.
+  const left = split ? { brl: brlForBR, usd: usdPool } : { brl: amount, usd: 0 };
   for (const l of lines) {
     l.qty = l.fractional ? Math.floor((l.ideal / l.unitBRL) * 10000) / 10000 : Math.floor(l.ideal / l.unitBRL + 1e-9);
     l.amount = l.qty * l.unitBRL;
@@ -371,15 +381,19 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const bought = lines.filter((l) => l.qty > 0).sort((a, b) => b.amount - a.amount);
   const invested = bought.reduce((s, l) => s + l.amount, 0);
   const intlBought = bought.filter((l) => l.type === 'internacional').reduce((s, l) => s + l.amount, 0);
-  const usdUsedBRL = intlItem ? Math.min(usdCashBRL, intlBought) : 0;
-  const remitted = Math.max(0, intlBought - usdCashBRL); // reais que precisam ir para o exterior
-  const brlInvested = invested - usdUsedBRL;
-  const totalFinal = totalBefore + brlInvested;
+  const remitted = remitNow ? pending : 0; // reais para mandar ao exterior agora (inclui a caixinha)
+  const toReserve = intlItem && !remitNow ? intlShare : 0; // reais deste mês que vão para a caixinha
+  const reserveAfter = intlItem ? (remitNow ? 0 : pending) : reserve; // caixinha depois de fazer este aporte
+  const usdLeftBRL = Math.max(0, usdPool - intlBought) + (intlItem ? 0 : usdCashBRL);
+  const brSpent = invested - intlBought;
+  const brlLeftover = Math.max(0, brlForBR - brSpent);
+  const totalFinal = totalBefore + brl - brlLeftover;
   const classes = cmp.classes.map((c) => {
     const add = bought.filter((l) => l.type === c.type).reduce((s, l) => s + l.amount, 0);
-    const cash = c.type === 'internacional' ? usdCashBRL : 0; // o caixa em dólar conta no internacional
+    const isIntl = c.type === 'internacional';
+    const cash = isIntl ? usdCashBRL + reserve : 0; // dólar parado lá fora e caixinha contam no internacional
     const before = c.value + cash;
-    const after = before + add - (c.type === 'internacional' ? usdUsedBRL : 0);
+    const after = isIntl ? c.value + add + usdLeftBRL + reserveAfter : before + add;
     const targetValue = totalAfter * targets[c.type];
     return {
       targetValue, need: Math.max(0, targetValue - before), hasReport: c.hasReport, cash,
@@ -387,16 +401,19 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       pctBefore: totalBefore ? before / totalBefore : 0, pctAfter: totalFinal ? after / totalFinal : 0, target: targets[c.type],
     };
   });
-  if (remitted > 1) warnings.push(`O caixa em dólar não cobriu todo o internacional: ${remitted.toFixed(2).replace('.', ',')} reais deste aporte precisam ser enviados ao exterior (paga IOF de 1,1% e o spread do câmbio).`);
+  const fmt = (v) => v.toFixed(2).replace('.', ',');
+  const usdOf = (v) => (usdBrl ? v / usdBrl : 0);
+  if (remitNow) warnings.push(`Envio para o exterior neste mês: R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}${reserve > 0 ? `, dos quais R$ ${fmt(reserve)} já estavam na caixinha do dólar` : ''}). Passa do envio mínimo de US$ ${fmt(minRemit)}; a conversão paga IOF de 1,1% e o spread, então chegam um pouco menos dólares — use no campo "Dólar" a cotação da corretora.`);
+  else if (toReserve > 1) warnings.push(`A parte do internacional em reais (R$ ${fmt(toReserve)}) vai para a caixinha do dólar: com ela, a caixinha fica com R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}), abaixo do envio mínimo de US$ ${fmt(minRemit)}. Faltam ≈ US$ ${fmt(Math.max(0, minRemit - usdOf(pending)))} (≈ R$ ${fmt(Math.max(0, minRemit * usdBrl - pending))}); quando passar, o app propõe o envio. Se preferir já mandar este mês, complete a caixinha com essa diferença e informe o novo valor acima.${usdCashBRL > 0 ? ' Enquanto isso, o internacional deste mês usa só o dólar que já está na corretora.' : ''}`);
   if (excluded.ceiling.length) warnings.push(`Não comprei ${excluded.ceiling.join(', ')}: a casa recomenda compra, mas o preço atual já passou do preço teto. Esperar o preço voltar.`);
   for (const x of excluded.ai) warnings.push(`Não comprei ${x.ticker}: a casa recomenda compra, mas a pesquisa da IA discordou${x.why ? ` — "${x.why.slice(0, 180)}${x.why.length > 180 ? '…' : ''}"` : '.'} (desligue "Não aportar onde a IA discorda" para incluir).`);
   if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
   if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {
     amount, invested, leftover: Math.max(0, amount - invested), totalBefore, totalAfter,
-    brlAmount: brl, brlInvested, brlLeftover: Math.max(0, brl - brlInvested),
-    usdCash, usdCashBRL, usdUsed: settings.usdBrl ? usdUsedBRL / Number(settings.usdBrl) : 0,
-    usdLeftover: settings.usdBrl ? Math.max(0, usdCashBRL - usdUsedBRL) / Number(settings.usdBrl) : 0, remitted,
+    brlAmount: brl, brlForBR, brlInvested: brSpent, brlLeftover,
+    usdCash, usdCashBRL, usdLeftover: usdOf(usdLeftBRL), remitted, remitNow,
+    reserve, toReserve, reserveAfter, minRemit, intlShare,
     attention: excluded.aiWait.map((x) => x.ticker),
     attentionItems: excluded.aiWait,
     queue, userExcluded: excluded.user, included: [...include],
