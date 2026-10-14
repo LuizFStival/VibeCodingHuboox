@@ -604,7 +604,32 @@ function renderMine() {
     }))),
     h('div', { class: 'legend' }, TYPE_IDS.map((t) => h('span', { class: `fill-${t}` }, h('i'), ASSET_TYPES[t].short))));
 
-  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), holdingsCard, alertsCard, ...perClass];
+  return [kpis, h('div', { class: 'grid two' }, byAsset, classCard), balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
+}
+
+/** Balanço mensal: foto do patrimônio de cada mês, para ver a evolução. */
+function balanceCard(cmp) {
+  const snaps = svc.snapshots();
+  const month = state.month ?? new Date().toISOString().slice(0, 7);
+  const saved = snaps.find((x) => x.month === month);
+  return card('Balanço mensal', h('button', { class: 'btn small primary', type: 'button', onclick: () => { svc.saveSnapshot(month); toast(`Balanço de ${monthLong(month)} salvo.`); render(); } },
+    saved ? `Atualizar balanço de ${monthLong(month)}` : `Salvar balanço de ${monthLong(month)}`),
+  h('p', { class: 'muted small', style: { 'margin-bottom': '10px' } }, 'Salve uma vez por mês (de preferência depois do aporte). O histórico mostra como o patrimônio e a divisão por classe evoluem.'),
+  snaps.length ? h('div', { class: 'table-wrap' }, h('table', {},
+    h('thead', {}, h('tr', {}, ['Mês', 'Patrimônio', 'Variação', 'Aportado', 'Resultado', 'Ações', 'FIIs', 'Internac.', ''].map((x) => h('th', {}, x)))),
+    h('tbody', {}, snaps.map((sn, i) => {
+      const prev = snaps[i + 1];
+      const res = sn.total - sn.cost;
+      const share = (t) => (sn.total ? `${pct((sn.byClass[t] ?? 0) / sn.total, 0)}` : '—');
+      return h('tr', {},
+        h('td', {}, monthLong(sn.month)),
+        h('td', { class: 'num' }, brl(sn.total)),
+        h('td', { class: `num ${prev ? (sn.total >= prev.total ? 'pos' : 'neg') : ''}` }, prev ? `${sn.total >= prev.total ? '+' : ''}${brl(sn.total - prev.total, 0)}` : '—'),
+        h('td', { class: 'num' }, sn.cost ? brl(sn.cost) : '—'),
+        h('td', { class: `num ${res >= 0 ? 'pos' : 'neg'}` }, sn.cost ? `${res >= 0 ? '+' : ''}${brl(res, 0)} (${signedPct(res / sn.cost)})` : '—'),
+        h('td', { class: 'num' }, share('acoes')), h('td', { class: 'num' }, share('fiis')), h('td', { class: 'num' }, share('internacional')),
+        h('td', {}, confirmButton('✕', 'Apagar?', () => { svc.removeSnapshot(sn.month); render(); })));
+    })))) : h('p', { class: 'muted' }, `Nenhum balanço salvo ainda. Patrimônio de hoje: ${brl(cmp.total)}.`));
 }
 
 function pasteHoldings() {
@@ -640,8 +665,10 @@ function renderAporte() {
     h('div', { class: 'row', style: { 'margin-top': '12px' } },
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAi, onchange: (e) => { svc.updateSettings({ respectAi: e.target.checked }); render(); } }), 'Não aportar onde a IA discorda'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.includeAguardar, onchange: (e) => { svc.updateSettings({ includeAguardar: e.target.checked }); render(); } }), 'Incluir ativos em AGUARDAR'),
-      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.fractionalIntl, onchange: (e) => { svc.updateSettings({ fractionalIntl: e.target.checked }); render(); } }), 'Internacional fracionado')),
-    h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos com recomendação COMPRAR mais abaixo do peso recomendado. Nada é vendido. Ações e FIIs em cotas inteiras.'));
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.fractionalIntl, onchange: (e) => { svc.updateSettings({ fractionalIntl: e.target.checked }); render(); } }), 'Internacional fracionado'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectCeiling !== false, onchange: (e) => { svc.updateSettings({ respectCeiling: e.target.checked }); render(); } }), 'Não comprar acima do preço teto'),
+      h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)')),
+    h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
   const kpis = h('div', { class: 'grid kpis' },
     kpi('Aporte', brl(plan.amount), null, 'hero'),
@@ -658,7 +685,7 @@ function renderAporte() {
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
-        tickerCell(l.ticker, l.name),
+        h('td', { class: 'tk' }, l.ticker, h('small', { title: l.reason, style: { 'white-space': 'normal', 'max-width': '320px' } }, l.reason)),
         h('td', {}, h('span', { class: `dot type-${l.type}` }), ASSET_TYPES[l.type].short),
         h('td', {}, recBadge(l.rec), ' ', verdictBadge(l.verdict)),
         h('td', { class: 'num' }, money(l.price, l.currency)),

@@ -1,8 +1,9 @@
 // Armazenamento no banco do Artifact (capability `db`) com a interface do localStorage
 // (getItem/setItem/removeItem), para o store.js funcionar igual.
 //
-// Os dados ficam na área privada do usuário (data/users/<id>/…), um documento por parte,
-// para respeitar o limite de 256 KiB por documento e guardar o histórico mês a mês:
+// Os dados ficam na coleção `carteira`, que as regras do Artifact deixam ler e gravar só
+// pelo dono (read/write: "owner"), um documento por parte, para respeitar o limite de
+// 256 KiB por documento e guardar o histórico mês a mês:
 //   app                      → configurações, carteira (posições) e modelo
 //   r-<mês>:<tipo>           → um relatório (extração do PDF) + a análise da IA dele
 //   p-<mês>:<tipo>           → endereços das imagens das páginas da tabela (no `assets`)
@@ -13,12 +14,21 @@ import { STORAGE_KEY } from './store.js';
 
 const PAGES_PREFIX = 'carteira-ia:pages:';
 
+export const COLLECTION = 'carteira';
+
 export async function createDbStorage({ db, user, assets, onError = () => {} }) {
-  const uid = await user?.id?.();
-  if (!db || !uid) return null;
-  const col = db.collection(`data/users/${uid}`);
+  if (!db) return null;
+  const col = db.collection(COLLECTION);
   const snap = await col.get();
   const docs = new Map(snap.docs.map((d) => [d.id, d.data()]));
+  // Versão anterior guardava na área privada (data/users/<id>): copia o que faltar.
+  const uid = await user?.id?.().catch(() => null);
+  const legacy = new Map();
+  if (uid) {
+    try {
+      for (const d of (await db.collection(`data/users/${uid}`).get()).docs) if (!docs.has(d.id)) { docs.set(d.id, d.data()); legacy.set(d.id, d.data()); }
+    } catch { /* sem dados antigos */ }
+  }
 
   // Monta o JSON do app a partir dos documentos.
   const app = docs.get('app');
@@ -35,7 +45,7 @@ export async function createDbStorage({ db, user, assets, onError = () => {} }) 
   const pages = new Map([...docs].filter(([id]) => id.startsWith('p-')).map(([id, b]) => [id.slice(2), JSON.stringify(b.pages ?? [])]));
 
   // Gravações: uma por documento por vez; a mais recente vence.
-  const written = new Map([...docs].map(([id, b]) => [id, JSON.stringify(b)]));
+  const written = new Map([...docs].filter(([id]) => !legacy.has(id)).map(([id, b]) => [id, JSON.stringify(b)]));
   const pending = new Map();
   const running = new Set();
   async function flush(id) {
@@ -54,6 +64,7 @@ export async function createDbStorage({ db, user, assets, onError = () => {} }) 
     } finally { running.delete(id); }
   }
   const put = (id, body) => { pending.set(id, body); flush(id); };
+  for (const [id, body] of legacy) put(id, body); // grava a cópia no lugar novo
 
   function saveMain(json) {
     const data = JSON.parse(json);

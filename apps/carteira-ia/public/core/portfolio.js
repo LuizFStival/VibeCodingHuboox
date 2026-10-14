@@ -9,6 +9,9 @@
 //   3. Elegível = recomendação COMPRAR (AGUARDAR/MANTER só se a opção estiver ligada)
 //      e, se "respeitar a IA" estiver ligado, sem veredito DISCORDA.
 //   4. Ações e FIIs em cotas inteiras; internacional pode ser fracionado.
+//   5. Preço atual acima do preço teto → não compra (margem de segurança da casa).
+//   6. Aporte pequeno não se pulveriza: no máximo `maxOrders` ativos por mês, os mais
+//      abaixo do peso; o rebalanceamento completo acontece ao longo dos meses.
 
 import { ASSET_TYPES, TYPE_IDS } from './report.js';
 
@@ -18,6 +21,8 @@ export const DEFAULT_SETTINGS = {
   includeAguardar: false,
   respectAi: true,
   fractionalIntl: true,
+  respectCeiling: true, // não compra acima do preço teto/justo do relatório
+  maxOrders: 5,         // concentra o aporte nos N ativos mais abaixo do peso (0 = sem limite)
 };
 
 /** ticker → { ticker, type, asset, analysis } a partir dos relatórios do mês. */
@@ -38,6 +43,7 @@ export function classifyTicker(ticker, universe = new Map()) {
   return 'internacional';
 }
 
+const pctBR = (x, d) => `${(x * 100).toFixed(d).replace('.', ',')}%`;
 const fxFor = (type, settings) => (ASSET_TYPES[type]?.currency === 'USD' ? Number(settings.usdBrl) || 0 : 1);
 
 /** Preço atual na moeda do ativo: o informado na posição > IA > relatório > preço médio. */
@@ -139,11 +145,16 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   amount = Math.max(0, Number(amount) || 0);
   const totalAfter = cmp.total + amount;
 
+  const excluded = { ceiling: [], ai: [], noPrice: [] };
   const isEligible = (a) => {
-    if (a.weight <= 0 || !a.price && !analyses[a.ticker]?.price) return false;
+    if (a.weight <= 0) return false;
     const recOk = a.rec === 'COMPRAR' || (settings.includeAguardar && (a.rec === 'AGUARDAR' || a.rec === 'MANTER'));
-    const aiOk = !settings.respectAi || analyses[a.ticker]?.verdict !== 'DISCORDA';
-    return recOk && aiOk;
+    if (!recOk) return false;
+    const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
+    if (!price) { excluded.noPrice.push(a.ticker); return false; }
+    if (settings.respectAi && analyses[a.ticker]?.verdict === 'DISCORDA') { excluded.ai.push(a.ticker); return false; }
+    if (settings.respectCeiling !== false && a.ceiling && price > a.ceiling) { excluded.ceiling.push(a.ticker); return false; }
+    return true;
   };
 
   // 1) entre classes
@@ -173,13 +184,32 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     for (const a of ci.eligible) {
       const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
       const it = items.find((i) => i.key === a.ticker);
+      const cls = cmp.classes.find((c) => c.type === ci.key);
+      const mine = cls.value ? it.current / cls.value : 0;
+      const up = a.ceiling && price ? a.ceiling / price - 1 : null;
       lines.push({
         ticker: a.ticker, name: a.name, type: ci.key, rec: a.rec, verdict: analyses[a.ticker]?.verdict ?? null,
         price, currency: ASSET_TYPES[ci.key].currency, unitBRL: price * fx, ideal: perAsset.get(a.ticker),
         deficit: it.target - it.current, fractional: ci.key === 'internacional' && settings.fractionalIntl,
         qty: 0, amount: 0,
+        reason: [
+          `${ASSET_TYPES[ci.key].short}: ${pctBR(cls.pct, 0)} do patrimônio, alvo ${pctBR(targets[ci.key], 0)}`,
+          `peso no ativo: você ${pctBR(mine, 1)}, recomendado ${pctBR(weights.get(a.ticker) ?? 0, 1)}`,
+          up !== null ? `potencial ${up >= 0 ? '+' : ''}${(up * 100).toFixed(0)}% até o teto` : '',
+        ].filter(Boolean).join(' · '),
       });
     }
+  }
+
+  // 2b) concentra nos N ativos com maior valor ideal; o dinheiro dos outros vai para eles
+  const maxOrders = Number(settings.maxOrders) || 0;
+  if (maxOrders > 0 && lines.length > maxOrders) {
+    lines.sort((a, b) => b.ideal - a.ideal);
+    const dropped = lines.splice(maxOrders);
+    const extra = dropped.reduce((s2, l) => s2 + l.ideal, 0);
+    const base = lines.reduce((s2, l) => s2 + l.ideal, 0);
+    for (const l of lines) l.ideal += base ? extra * (l.ideal / base) : extra / lines.length;
+    warnings.push(`Aporte concentrado em ${maxOrders} ativos (os mais abaixo do peso). Ficaram para os próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
   }
 
   // 3) cotas: arredonda para baixo e usa a sobra comprando cotas inteiras onde mais falta
@@ -207,6 +237,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       pctBefore: cmp.total ? c.value / cmp.total : 0, pctAfter: totalFinal ? (c.value + add) / totalFinal : 0, target: targets[c.type],
     };
   });
+  if (excluded.ceiling.length) warnings.push(`Em COMPRAR, mas com preço acima do teto (não compra agora): ${excluded.ceiling.join(', ')}.`);
+  if (excluded.ai.length) warnings.push(`Fora porque a IA discorda da compra: ${excluded.ai.join(', ')}.`);
+  if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {
     amount, invested, leftover: Math.max(0, amount - invested),
     lines: bought, classes, warnings,

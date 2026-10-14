@@ -115,7 +115,7 @@ test('aporte: só COMPRAR, cotas inteiras, respeita veredito da IA', () => {
   const acoes = plan.classes.find((c) => c.type === 'acoes');
   assert.ok(Math.abs(acoes.pctAfter - 0.5) < 0.02);
 
-  const loose = planAporte({ amount: 10000, holdings: [], reports: reports(), analyses, settings: { ...settings, respectAi: false, includeAguardar: true } });
+  const loose = planAporte({ amount: 10000, holdings: [], reports: reports(), analyses, settings: { ...settings, respectAi: false, includeAguardar: true, respectCeiling: false } });
   assert.ok(loose.lines.some((l) => l.ticker === 'BBBB3'));
   assert.ok(loose.lines.some((l) => l.ticker === 'CCCC3'));
 });
@@ -422,4 +422,23 @@ test('leitura do PDF pelo chat: pedido pronto e resposta colada', () => {
   assert.equal(res.report.assets.length, 5);
   assert.equal(svc.report('2026-10:acoes').extraction.manual, true);
   assert.throws(() => svc.importManualReport('não li', { type: 'acoes', month: '2026-10' }), /JSON/);
+});
+
+test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo', () => {
+  const r = [normalizeReport({ assets: [
+    { ticker: 'AAAA3', allocationPct: 25, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+    { ticker: 'BBBB3', allocationPct: 25, price: 20, ceilingPrice: 18, recommendation: 'COMPRAR' }, // acima do teto
+    { ticker: 'CCCC3', allocationPct: 25, price: 5, ceilingPrice: 9, recommendation: 'COMPRAR' },
+    { ticker: 'DDDD3', allocationPct: 25, price: 8, ceilingPrice: 9, recommendation: 'COMPRAR' },
+  ] }, { type: 'acoes', month: '2026-10' })];
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, includeAguardar: false, respectCeiling: true, maxOrders: 2 };
+  const plan = planAporte({ amount: 300, holdings: [{ id: '1', ticker: 'AAAA3', type: 'acoes', qty: 10, avgPrice: 10 }], reports: r, settings: st });
+  const t = plan.lines.map((l) => l.ticker);
+  assert.ok(!t.includes('BBBB3'));
+  assert.equal(t.length, 2);
+  assert.ok(!t.includes('AAAA3'), 'quem já tem mais fica para depois');
+  assert.ok(plan.warnings.some((w) => /acima do teto.*BBBB3/.test(w)));
+  assert.ok(plan.warnings.some((w) => /concentrado em 2/.test(w)));
+  assert.match(plan.lines[0].reason, /potencial \+\d+% até o teto/);
+  assert.ok(plan.invested > 280);
 });

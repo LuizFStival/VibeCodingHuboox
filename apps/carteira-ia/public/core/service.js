@@ -262,6 +262,22 @@ export function createService(store) {
       return { count: rows.length, errors };
     },
 
+    // ---------------- balanço mensal (foto do patrimônio, para acompanhar a evolução)
+    snapshots: () => [...d().snapshots].sort((a, b) => b.month.localeCompare(a.month)),
+    saveSnapshot(month) {
+      const cmp = this.compare(month);
+      const cost = cmp.rows.reduce((s, r) => s + (r.cost ?? 0), 0);
+      const snap = {
+        month, at: new Date().toISOString(), total: Math.round(cmp.total * 100) / 100, cost: Math.round(cost * 100) / 100,
+        usdBrl: d().settings.usdBrl,
+        byClass: Object.fromEntries(cmp.classes.map((c) => [c.type, Math.round(c.value * 100) / 100])),
+        byAsset: cmp.rows.map((r) => ({ ticker: r.ticker, type: r.type, qty: r.qty, value: Math.round(r.value * 100) / 100 })),
+      };
+      store.update((data) => { data.snapshots = [...data.snapshots.filter((x) => x.month !== month), snap]; });
+      return snap;
+    },
+    removeSnapshot(month) { store.update((data) => { data.snapshots = data.snapshots.filter((x) => x.month !== month); }); },
+
     // ---------------- configurações
     settings: () => d().settings,
     updateSettings(patch) { store.update((data) => { data.settings = { ...data.settings, ...patch, targets: { ...data.settings.targets, ...(patch.targets ?? {}) } }; }); },
