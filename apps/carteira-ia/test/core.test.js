@@ -100,7 +100,7 @@ const reports = () => [
   normalizeReport(fixture('acoes.json'), { type: 'acoes', month: '2026-10' }),
   normalizeReport(fixture('internacional.json'), { type: 'internacional', month: '2026-10' }),
 ];
-const settings = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, includeAguardar: false, respectAi: true, fractionalIntl: true };
+const settings = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, includeAguardar: false, respectAi: true, fractionalIntl: true, bySegment: false, maxNew: -1 };
 
 test('aporte: só COMPRAR, cotas inteiras, respeita veredito da IA', () => {
   const analyses = { CCCC3: { verdict: 'DISCORDA' } };
@@ -431,7 +431,7 @@ test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo
     { ticker: 'CCCC3', allocationPct: 25, price: 5, ceilingPrice: 9, recommendation: 'COMPRAR' },
     { ticker: 'DDDD3', allocationPct: 25, price: 8, ceilingPrice: 9, recommendation: 'COMPRAR' },
   ] }, { type: 'acoes', month: '2026-10' })];
-  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, includeAguardar: false, respectCeiling: true, maxOrders: 2 };
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, includeAguardar: false, respectCeiling: true, maxOrders: 2, bySegment: false, maxNew: -1 };
   const plan = planAporte({ amount: 300, holdings: [{ id: '1', ticker: 'AAAA3', type: 'acoes', qty: 10, avgPrice: 10 }], reports: r, settings: st });
   const t = plan.lines.map((l) => l.ticker);
   assert.ok(!t.includes('BBBB3'));
@@ -444,7 +444,7 @@ test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo
 });
 
 test('veredito da IA sem pesquisa na web não bloqueia o aporte', () => {
-  const st = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, respectAi: true, respectCeiling: false, maxOrders: 0 };
+  const st = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, respectAi: true, respectCeiling: false, maxOrders: 0, bySegment: false, maxNew: -1 };
   const noWeb = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: false } }, settings: st });
   assert.ok(noWeb.lines.some((l) => l.ticker === 'CCCC3'));
   assert.ok(noWeb.warnings.some((w) => /sem pesquisa na web.*não bloqueei/.test(w)));
@@ -457,7 +457,7 @@ test('concentração respeita as classes: cada classe com fatia relevante recebe
     normalizeReport({ assets: [1, 2, 3, 4].map((i) => ({ ticker: `ACA${i}3`.replace(/\d3$/, `${i}3`).slice(0, 4).padEnd(4, 'A') + '3', allocationPct: 25, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' })) }, { type: 'acoes', month: '2026-10' }),
     normalizeReport({ assets: ['FIIA', 'FIIB', 'FIIC', 'FIID', 'FIIE', 'FIIF', 'FIIG', 'FIIH'].map((t) => ({ ticker: `${t}11`, allocationPct: 12.5, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' })) }, { type: 'fiis', month: '2026-10' }),
   ];
-  const st = { targets: { acoes: 0.5, fiis: 0.5, internacional: 0 }, usdBrl: 5, respectAi: true, respectCeiling: true, maxOrders: 4 };
+  const st = { targets: { acoes: 0.5, fiis: 0.5, internacional: 0 }, usdBrl: 5, respectAi: true, respectCeiling: true, maxOrders: 4, bySegment: false, maxNew: -1 };
   const plan = planAporte({ amount: 1000, holdings: [], reports: r, settings: st });
   const fiis = plan.lines.filter((l) => l.type === 'fiis').reduce((a, l) => a + l.amount, 0);
   const acoes = plan.lines.filter((l) => l.type === 'acoes').reduce((a, l) => a + l.amount, 0);
@@ -515,7 +515,7 @@ test('"aguardar" da pesquisa tira da compra e vai para atenção; aguardar da ca
     { ticker: 'CCCC3', allocationPct: 20, price: 10, ceilingPrice: 13, recommendation: 'AGUARDAR' },
   ] }, { type: 'acoes', month: '2026-10' })];
   const an = { BBBB3: { verdict: 'PARCIAL', aiRec: 'AGUARDAR', searched: true, summary: 'preço perto do teto' }, CCCC3: { verdict: 'DISCORDA', aiRec: 'COMPRAR', searched: true } };
-  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0 };
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0, bySegment: false, maxNew: -1 };
   const plan = planAporte({ amount: 1000, holdings: [], reports: r, analyses: an, settings: st });
   assert.deepEqual(plan.lines.map((l) => l.ticker), ['AAAA3']);
   assert.deepEqual(plan.attention, ['BBBB3']);
@@ -525,4 +525,29 @@ test('"aguardar" da pesquisa tira da compra e vai para atenção; aguardar da ca
   const off = planAporte({ amount: 1000, holdings: [], reports: r, analyses: an, settings: { ...st, respectAiWait: false } });
   assert.ok(off.lines.some((l) => l.ticker === 'BBBB3'));
   assert.ok(!off.lines.some((l) => l.ticker === 'CCCC3'), 'aguardar da casa nunca entra, mesmo com a IA dizendo comprar');
+});
+
+test('aporte por segmento: reforça o que já tem, abre no máximo N novos, respeita incluir/tirar', () => {
+  const r = [normalizeReport({ assets: [
+    { ticker: 'LOGA11', segment: 'Logístico', allocationPct: 20, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
+    { ticker: 'LOGB11', segment: 'Logístico', allocationPct: 20, price: 100, ceilingPrice: 130, recommendation: 'COMPRAR' },
+    { ticker: 'PAPA11', segment: 'Papel', allocationPct: 20, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+    { ticker: 'PAPB11', segment: 'Papel', allocationPct: 20, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+    { ticker: 'SHOA11', segment: 'Shopping', allocationPct: 10, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
+    { ticker: 'LAJA11', segment: 'Lajes', allocationPct: 10, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
+  ] }, { type: 'fiis', month: '2026-10' })];
+  const holdings = [{ id: '1', ticker: 'LOGA11', type: 'fiis', qty: 1, avgPrice: 100 }, { id: '2', ticker: 'PAPX11', type: 'fiis', qty: 10, avgPrice: 10, segment: 'Papel' }];
+  const st = { targets: { acoes: 0, fiis: 1, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0, maxNew: 1 };
+  const plan = planAporte({ amount: 2000, holdings, reports: r, settings: st });
+  const t = plan.lines.map((l) => l.ticker).sort();
+  assert.ok(t.includes('LOGA11'), 'reforça o logístico que já tem');
+  assert.ok(!t.includes('LOGB11'), 'não abre outro logístico');
+  assert.equal(plan.lines.filter((l) => !l.ownedQty).length, 1, 'no máximo 1 novo');
+  assert.ok(plan.lines.every((l) => l.segment), 'cada linha diz o segmento');
+  assert.ok(plan.warnings.some((w) => /no máximo 1 posição/.test(w)));
+  // trocar: tirar LOGA11 e incluir LOGB11 (ex.: sugestão da IA)
+  const swap = planAporte({ amount: 2000, holdings, reports: r, settings: { ...st, exclude: ['LOGA11'], include: ['LOGB11'] } });
+  assert.ok(swap.lines.some((l) => l.ticker === 'LOGB11'));
+  assert.ok(!swap.lines.some((l) => l.ticker === 'LOGA11'));
+  assert.deepEqual(swap.userExcluded, ['LOGA11']);
 });

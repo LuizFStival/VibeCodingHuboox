@@ -323,11 +323,19 @@ export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
     `Patrimônio atual: ${brlTxt(cmp.total)}. Aporte: ${brlTxt(plan.amount)}.`,
     `Classes (antes → depois → alvo): ${plan.classes.map((c) => `${c.label} ${(c.pctBefore * 100).toFixed(1)}% → ${(c.pctAfter * 100).toFixed(1)}% → ${(c.target * 100).toFixed(0)}%`).join(' · ')}`,
     'Compras propostas:',
-    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker}: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
+    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker} [${l.segment ?? '?'}${l.ownedQty ? `, já tem ${l.ownedQty}` : ', NOVO'}]: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
     plan.warnings.length ? `Observações do cálculo:\n${plan.warnings.map((w) => `- ${w}`).join('\n')}` : '',
-    `Carteira atual: ${cmp.rows.map((r) => `${r.ticker} ${((r.value / (cmp.total || 1)) * 100).toFixed(1)}%`).join(', ')}`,
+    'Carteira atual por classe e segmento:',
+    ...['acoes', 'fiis', 'internacional'].map((t) => {
+      const rs = cmp.rows.filter((r) => r.type === t);
+      return `${ASSET_TYPES[t].short}: ${rs.length ? rs.map((r) => `${r.ticker} [${r.segment ?? '?'}] ${brlTxt(r.value)}`).join(', ') : 'nenhum'}`;
+    }),
     '',
-    'Revise o plano como um analista: 1) faz sentido? 2) trocaria algum ativo ou valor, e por quê? 3) riscos de concentração ou de momento; 4) versão final sugerida (ativo, quantidade, valor).',
+    'Revise o plano como um analista, considerando:',
+    '- Diversificação por SEGMENTO dentro de cada classe (ex.: logístico, papel, lajes nos FIIs): o aporte deve ir para segmentos abaixo do peso.',
+    '- Preferir REFORÇAR posições que o investidor já tem e que estão boas, antes de abrir posições novas; com patrimônio pequeno, muitas posições pequenas atrapalham. Justifique cada posição nova versus reforçar uma existente do mesmo segmento.',
+    '- Qualidade, porte e liquidez do ativo, não só DY e desconto.',
+    'Responda: 1) o plano faz sentido? 2) trocaria algum ativo? Diga exatamente "trocar X por Y" e por quê; 3) riscos de concentração ou de momento; 4) versão final (ativo, quantidade, valor).',
     close,
   ].filter(Boolean).join('\n');
 }

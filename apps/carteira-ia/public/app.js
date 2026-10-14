@@ -580,12 +580,15 @@ function renderMine() {
   const edit = (hd, field) => (e) => { try { svc.upsertHolding({ ...hd, [field]: e.target.value }); render(); } catch (err) { toast(err.message, true); render(); } };
 
   const table = rows.length ? h('div', { class: 'table-wrap' }, h('table', {},
-    h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Qtd', 'Preço médio', 'Preço atual', 'Valor (R$)', selClass ? `% em ${ASSET_TYPES[sel].short}` : '% total', 'Relatório', ''].map((c) => h('th', {}, c)))),
+    h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Segmento', 'Qtd', 'Preço médio', 'Preço atual', 'Valor (R$)', selClass ? `% em ${ASSET_TYPES[sel].short}` : '% total', 'Relatório', ''].map((c) => h('th', {}, c)))),
     h('tbody', {}, rows.map((r) => {
       const rec = universe.get(r.ticker);
       return h('tr', {},
         h('td', { class: 'tk' }, r.ticker),
         h('td', {}, h('select', { onchange: edit(r, 'type'), 'aria-label': 'Classe' }, TYPE_IDS.map((t) => h('option', { value: t, selected: r.type === t }, ASSET_TYPES[t].short)))),
+        h('td', {}, rec?.segment
+          ? h('span', { class: 'small', title: 'segmento do relatório do mês' }, rec.segment)
+          : h('input', { type: 'text', list: `seg-${r.type}`, value: r.segment ?? '', placeholder: 'informe', onchange: edit(r, 'segment'), 'aria-label': 'Segmento', style: { 'min-width': '110px' } })),
         h('td', {}, h('input', { type: 'text', inputmode: 'decimal', value: String(r.qty), onchange: edit(r, 'qty'), 'aria-label': 'Quantidade' })),
         h('td', {}, h('input', { type: 'text', inputmode: 'decimal', value: r.avgPrice ?? '', onchange: edit(r, 'avgPrice'), 'aria-label': 'Preço médio' })),
         h('td', {}, h('input', { type: 'text', inputmode: 'decimal', value: r.price ?? '', placeholder: r.priceUsed ? String(r.priceUsed) : 'informe', onchange: edit(r, 'price'), 'aria-label': 'Preço atual' })),
@@ -594,12 +597,13 @@ function renderMine() {
         h('td', {}, rec ? recBadge(rec.rec) : h('span', { class: 'muted small' }, 'fora'), ' ', analyses[r.ticker] ? verdictBadge(analyses[r.ticker].verdict) : null),
         h('td', {}, h('button', { class: 'btn ghost small', type: 'button', title: 'Remover', onclick: () => { svc.removeHolding(r.id); render(); } }, '✕')));
     })),
-    h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, selClass ? `Total em ${ASSET_TYPES[sel].label}` : 'Total'), h('td', { class: 'num' }, brl(base)), h('td', { colspan: 3 }))))) : h('p', { class: 'muted' }, cmp.rows.length ? 'Nenhuma posição nesta classe.' : 'Nenhuma posição ainda. Adicione acima ou cole a lista da sua corretora.');
+    h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, selClass ? `Total em ${ASSET_TYPES[sel].label}` : 'Total'), h('td', { class: 'num' }, brl(base)), h('td', { colspan: 3 }))))) : h('p', { class: 'muted' }, cmp.rows.length ? 'Nenhuma posição nesta classe.' : 'Nenhuma posição ainda. Adicione acima ou cole a lista da sua corretora.');
 
+  const segLists = TYPE_IDS.map((t) => h('datalist', { id: `seg-${t}` }, [...new Set(svc.reportsFor(month ?? '').filter((r) => r.type === t).flatMap((r) => r.assets.map((a) => a.segment)).filter(Boolean))].map((sg) => h('option', { value: sg }))));
   const holdingsCard = card('Minhas posições', h('div', { class: 'row' },
     h('button', { class: 'btn small', type: 'button', onclick: pasteHoldings }, 'Colar lista'),
     rows.length ? confirmButton('Limpar', 'Clique de novo para apagar tudo', () => { svc.importHoldingsText('', { replace: true }); render(); }) : null),
-  addForm, h('div', { style: { 'margin-top': '14px' } }, table),
+  addForm, h('div', { style: { 'margin-top': '14px' } }, table), segLists,
   h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `Preço atual em branco = usa o preço da análise da IA ou do relatório. Internacional em US$, convertido a ${brl(settings.usdBrl)} (ajuste no Aporte).`));
 
   if (!cmp.rows.length) return [holdingsCard];
@@ -644,7 +648,28 @@ function renderMine() {
     }))),
     h('div', { class: 'legend' }, TYPE_IDS.map((t) => h('span', { class: `fill-${t}` }, h('i'), ASSET_TYPES[t].short))));
 
-  return [filterBar, kpis, h('div', { class: 'grid two' }, byAsset, classCard), diagnosisCard(cmp, sel),
+  // Segmentos dentro de cada classe: você × recomendado (traço = peso recomendado do segmento).
+  const segmentCard = card(selClass ? `Segmentos em ${ASSET_TYPES[sel].label}` : 'Segmentos por classe', h('span', { class: 'muted small' }, 'barra = você · traço = recomendado'),
+    h('div', { class: selClass ? 'stack' : 'grid three' }, TYPE_IDS.filter(inSel).map((t) => {
+      const mine = cmp.rows.filter((r) => r.type === t);
+      const tot = mine.reduce((a, r) => a + r.value, 0);
+      const rep = svc.reportsFor(month ?? '').find((r) => r.type === t);
+      const rw = new Map();
+      if (rep) { const act = rep.assets.filter((a) => a.weight > 0); const sw = act.reduce((a, x) => a + x.weight, 0) || 1; for (const a of act) rw.set(a.segment || 'Outros', (rw.get(a.segment || 'Outros') ?? 0) + a.weight / sw); }
+      const segs = new Map();
+      for (const r of mine) segs.set(r.segment || 'Outros', (segs.get(r.segment || 'Outros') ?? 0) + r.value);
+      const names = [...new Set([...segs.keys(), ...rw.keys()])].sort((a, b) => (segs.get(b) ?? 0) - (segs.get(a) ?? 0) || (rw.get(b) ?? 0) - (rw.get(a) ?? 0));
+      return h('section', { class: 'stack', style: { gap: '6px', 'min-width': '0' } },
+        selClass ? null : h('h3', {}, h('span', { class: `dot type-${t}` }), `${ASSET_TYPES[t].short} · ${brl(tot, 0)}`),
+        names.length ? bars(names.map((n) => ({
+          label: n, value: tot ? (segs.get(n) ?? 0) / tot : 0, target: rw.get(n) ?? 0, cls: `fill-${t}`,
+          text: `${pct(tot ? (segs.get(n) ?? 0) / tot : 0, 0)}${rw.has(n) ? ` / ${pct(rw.get(n), 0)}` : ''}`,
+          title: `${n}: ${mine.filter((r) => (r.segment || 'Outros') === n).map((r) => r.ticker).join(', ') || 'nenhum ativo seu'}`,
+        })), { max: 1 }) : h('p', { class: 'muted small' }, 'sem ativos'));
+    })),
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Passe o mouse num segmento para ver quais ativos seus estão nele. O aporte prioriza os segmentos abaixo do traço.'));
+
+  return [filterBar, kpis, h('div', { class: 'grid two' }, byAsset, classCard), segmentCard, diagnosisCard(cmp, sel),
     aiReviewCard('portfolio', { title: 'Análise da carteira pela IA', intro: 'A IA cruza a sua carteira com o ranking e as pesquisas do mês: concentração, pontos fortes, posições em risco, o que falta e as prioridades dos próximos aportes.' }),
     balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
 }
@@ -760,13 +785,16 @@ function renderAporte() {
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAi, onchange: (e) => { svc.updateSettings({ respectAi: e.target.checked }); render(); } }), 'Não aportar onde a IA discorda'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.includeAguardar, onchange: (e) => { svc.updateSettings({ includeAguardar: e.target.checked }); render(); } }), 'Incluir ativos em AGUARDAR'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.fractionalIntl, onchange: (e) => { svc.updateSettings({ fractionalIntl: e.target.checked }); render(); } }), 'Internacional fracionado'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.preferOwned !== false, onchange: (e) => { svc.updateSettings({ preferOwned: e.target.checked }); render(); } }), 'Reforçar o que já tenho antes de abrir novos'),
+      h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxNew', type: 'number', min: 0, max: 10, step: 1, value: String(s.maxNew ?? 2), style: { width: '56px' }, onchange: (e) => { svc.updateSettings({ maxNew: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos novos por aporte'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAiWait !== false, onchange: (e) => { svc.updateSettings({ respectAiWait: e.target.checked }); render(); } }), 'Seguir o "aguardar" da pesquisa'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectCeiling !== false, onchange: (e) => { svc.updateSettings({ respectCeiling: e.target.checked }); render(); } }), 'Não comprar acima do preço teto'),
       h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)')),
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, svc.holdings().length]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
+  if (state.keepProposal) { state.proposedKey = paramsKey; state.keepProposal = false; }
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
     proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}`);
@@ -805,10 +833,10 @@ function renderAporte() {
 
   const lines = plan.lines.length ? card('Proposta: onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {}, ['Ativo', 'Classe', 'Na sua carteira', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte'].map((x) => h('th', {}, x)))),
+      h('thead', {}, h('tr', {}, ['Ativo', 'Classe / segmento', 'Na sua carteira', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte', ''].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
         h('td', { class: 'tk' }, l.ticker, h('small', { title: l.reason, style: { 'white-space': 'normal', 'max-width': '320px' } }, l.reason)),
-        h('td', {}, h('span', { class: `dot type-${l.type}` }), ASSET_TYPES[l.type].short),
+        h('td', {}, h('span', { class: `dot type-${l.type}` }), ASSET_TYPES[l.type].short, h('div', { class: 'muted small' }, l.segment), l.forced ? h('span', { class: 'badge rec-MANTER' }, 'incluído por você') : null),
         h('td', { class: 'small' }, l.ownedQty > 0
           ? h('span', {}, `tem ${qtyFmt(l.ownedQty)} (${brl(l.ownedValue, 0)})`, h('br'), h('span', { class: 'muted' }, `fica com ${qtyFmt(Math.round((l.ownedQty + l.qty) * 10000) / 10000)}`))
           : h('span', { class: 'badge rec-MANTER' }, 'Novo na carteira')),
@@ -816,8 +844,9 @@ function renderAporte() {
         h('td', { class: 'num' }, money(l.price, l.currency)),
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
         h('td', { class: 'num' }, brl(l.amount)),
-        h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0))))),
-      h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, `Total · ${plan.lines.filter((l) => !l.ownedQty).length} novo(s) na carteira, ${plan.lines.filter((l) => l.ownedQty).length} reforço(s)`), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0))))))) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
+        h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0)),
+        h('td', {}, h('button', { class: 'btn ghost small', type: 'button', title: `Tirar ${l.ticker} desta proposta`, onclick: () => adjustPlan(l.ticker, 'exclude') }, '✕ tirar'))))),
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, `Total · ${plan.lines.filter((l) => !l.ownedQty).length} novo(s) na carteira, ${plan.lines.filter((l) => l.ownedQty).length} reforço(s)`), h('td', { class: 'num' }, brl(plan.invested)), h('td', { class: 'num' }, pct(plan.amount ? plan.invested / plan.amount : 0)), h('td'))))) ) : card('Proposta', null, h('p', { class: 'muted' }, aporte > 0 ? 'Nenhum ativo elegível com estas regras.' : 'Informe um valor para calcular.'));
 
   const review = aiReviewCard('plan', {
     title: 'Opinião final da IA sobre o plano',
@@ -826,10 +855,30 @@ function renderAporte() {
   });
 
   const attention = plan.attentionItems?.length ? card(`Em atenção: não comprei agora (${plan.attentionItems.length})`, h('span', { class: 'muted small' }, 'a casa recomenda compra, mas a pesquisa pede para aguardar'),
-    h('ul', { class: 'alert-list' }, plan.attentionItems.map((x) => h('li', { class: 'preco' }, h('b', {}, x.ticker), x.why ? h('div', { class: 'muted small' }, x.why.slice(0, 220) + (x.why.length > 220 ? '…' : '')) : null))),
+    h('ul', { class: 'alert-list' }, plan.attentionItems.map((x) => h('li', { class: 'preco' }, h('div', { class: 'row' }, h('b', {}, x.ticker), h('span', { class: 'spacer' }), h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(x.ticker, 'include') }, '+ incluir mesmo assim')), x.why ? h('div', { class: 'muted small' }, x.why.slice(0, 220) + (x.why.length > 220 ? '…' : '')) : null))),
     h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'Eles voltam para a compra quando a pesquisa do mês disser comprar. Para incluir mesmo assim, desmarque "Seguir o aguardar da pesquisa".')) : null;
 
-  return [form, proposeCard, kpis, balance, notices, lines, attention, h('div', { class: 'grid two' }, classes, review)];
+  // Ajustar a proposta à mão (ex.: aplicar "trocar X por Y" sugerido pela IA).
+  const ov = svc.planOverrides(state.month);
+  const inPlan = new Set(plan.lines.map((l) => l.ticker));
+  const allRec = svc.reportsFor(state.month).flatMap((r) => r.assets.filter((a) => a.rec !== 'VENDER').map((a) => ({ ...a, type: r.type })));
+  const addSel = h('select', { id: 'planAdd', 'aria-label': 'Incluir ativo' }, h('option', { value: '' }, 'Incluir outro ativo recomendado…'),
+    TYPE_IDS.map((t) => h('optgroup', { label: ASSET_TYPES[t].label }, allRec.filter((a) => a.type === t && !inPlan.has(a.ticker)).map((a) => h('option', { value: a.ticker }, `${a.ticker} · ${a.segment || '—'} · ${a.rec.toLowerCase()}`)))));
+  const adjust = card('Ajustar a proposta', h('span', { class: 'muted small' }, 'para aplicar uma troca sugerida pela IA, ou a sua preferência'),
+    h('div', { class: 'stack' },
+      h('div', { class: 'row' }, addSel, h('button', { class: 'btn small primary', type: 'button', onclick: () => { if (addSel.value) adjustPlan(addSel.value, 'include'); } }, '+ incluir')),
+      plan.queue?.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Na fila (entram nos próximos meses):'), plan.queue.map((t) => h('button', { class: 'btn small', type: 'button', title: `Incluir ${t} já neste aporte`, onclick: () => adjustPlan(t, 'include') }, `+ ${t}`))) : null,
+      ov.include.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Incluídos por você:'), ov.include.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `${t} ✕`))) : null,
+      ov.exclude.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Tirados por você:'), ov.exclude.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `desfazer ${t}`))) : null));
+
+  return [form, proposeCard, kpis, balance, notices, lines, adjust, attention, h('div', { class: 'grid two' }, classes, review)];
+}
+
+/** Tira/inclui um ativo da proposta do mês e recalcula na hora, mantendo a proposta aberta. */
+function adjustPlan(ticker, action) {
+  svc.togglePlan(state.month, ticker, action);
+  state.keepProposal = true;
+  render();
 }
 
 /**

@@ -233,10 +233,11 @@ export function createService(store) {
       const row = {
         id: h.id ?? uid(), ticker, type: TYPE_IDS.includes(h.type) ? h.type : classifyTicker(ticker, buildUniverse(d().reports)),
         qty, avgPrice: parseNumber(h.avgPrice), price: parseNumber(h.price),
+        segment: String(h.segment ?? '').trim().slice(0, 40) || null,
       };
       store.update((data) => {
         const i = data.holdings.findIndex((x) => x.id === row.id || x.ticker === row.ticker);
-        if (i >= 0) data.holdings[i] = { ...row, id: data.holdings[i].id }; else data.holdings.push(row);
+        if (i >= 0) data.holdings[i] = { ...row, id: data.holdings[i].id, segment: h.segment === undefined ? data.holdings[i].segment ?? null : row.segment }; else data.holdings.push(row);
       });
       return row;
     },
@@ -314,7 +315,28 @@ export function createService(store) {
       return comparePortfolio({ holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: d().settings });
     },
     plan(month, amount) {
-      return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: d().settings });
+      const ov = d().settings.planOverrides?.[month] ?? {};
+      return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: { ...d().settings, include: ov.include ?? [], exclude: ov.exclude ?? [] } });
+    },
+    /** Ajuste manual da proposta do mês: tirar ou incluir um ativo (ex.: aplicar a sugestão da IA). */
+    planOverrides: (month) => d().settings.planOverrides?.[month] ?? { include: [], exclude: [] },
+    togglePlan(month, ticker, action) {
+      store.update((data) => {
+        const all = { ...(data.settings.planOverrides ?? {}) };
+        const ov = { include: [...(all[month]?.include ?? [])], exclude: [...(all[month]?.exclude ?? [])] };
+        const drop = (k) => { ov[k] = ov[k].filter((t) => t !== ticker); };
+        if (action === 'exclude') { drop('include'); ov.exclude.push(ticker); }
+        else if (action === 'include') { drop('exclude'); ov.include.push(ticker); }
+        else { drop('include'); drop('exclude'); }
+        all[month] = ov;
+        data.settings = { ...data.settings, planOverrides: all };
+      });
+    },
+    /** Segmento de cada posição (do relatório do mês; senão o informado na posição). */
+    segmentOf(month, ticker) {
+      const h = d().holdings.find((x) => x.ticker === ticker);
+      for (const r of reportsFor(month)) { const a = r.assets.find((x) => x.ticker === ticker); if (a?.segment) return a.segment; }
+      return h?.segment || 'Outros';
     },
     reviewPrompt(month, plan) {
       return aporteReviewPrompt({ plan, reports: reportsFor(month), analyses: analysesFor(month), today: todayISO() });
