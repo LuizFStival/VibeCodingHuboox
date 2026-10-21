@@ -628,3 +628,24 @@ test('registrar aporte: soma às posições com preço médio e dá para desfaze
   assert.equal(svc.settings().usdCash, 114.83);
   assert.equal(svc.aportes().length, 0);
 });
+
+test('mês novo não apaga o anterior: outubro fica guardado e novembro entra ao lado', () => {
+  const svc = createService(createStore(memoryStorage()));
+  svc.importReportJson({ ...fixture('acoes.json'), type: 'acoes', month: '2026-10' });
+  svc.upsertHolding({ ticker: 'VALE3', type: 'acoes', qty: 2, avgPrice: 68 });
+  svc.togglePlan('2026-10', 'ITUB3', 'exclude');
+  svc.registerAporte('2026-10', [{ ticker: 'VALE3', type: 'acoes', qty: 1, price: 66 }]);
+  svc.saveNote('2026-10', 'plan', 'parecer de outubro', 'GPT');
+  // novembro: mesmo tipo de carteira, outro mês
+  const nov = fixture('acoes.json'); nov.assets = nov.assets.slice(0, 3);
+  svc.importReportJson({ ...nov, type: 'acoes', month: '2026-11' });
+  assert.deepEqual(svc.months(), ['2026-11', '2026-10']);
+  assert.equal(svc.reportsFor('2026-10')[0].assets.length, fixture('acoes.json').assets.length, 'outubro intacto');
+  assert.equal(svc.reportsFor('2026-11')[0].assets.length, 3);
+  assert.equal(svc.note('2026-10', 'plan').text, 'parecer de outubro');
+  assert.equal(svc.note('2026-11', 'plan'), null);
+  assert.deepEqual(svc.planOverrides('2026-11').exclude ?? [], [], 'ajustes da proposta são de cada mês');
+  assert.equal(svc.aportes().filter((a) => a.month === '2026-11').length, 0, 'novembro começa sem aporte registrado');
+  assert.equal(svc.holdings().find((h) => h.ticker === 'VALE3').qty, 3, 'a carteira atual segue para novembro');
+  assert.ok(svc.snapshots().some((s) => s.month === '2026-10'), 'o balanço de outubro continua no histórico');
+});
