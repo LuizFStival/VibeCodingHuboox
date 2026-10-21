@@ -27,10 +27,13 @@ export const DEFAULT_SETTINGS = {
   respectAiWait: true,  // "aguardar" da pesquisa (com web) também tira o ativo da compra
   preferOwned: true,    // dentro do segmento, reforça o que você já tem antes de abrir posição nova
   maxNew: 2,            // no máximo N posições novas por aporte
-  aporteAmount: 757.4,  // valor padrão do aporte do mês (editável, fica salvo)
+  aporteAmount: 500,    // valor padrão do aporte do mês (editável, fica salvo)
   usdCash: 0,           // dólares já parados na corretora no exterior: pagam as compras do internacional
   dollarReserve: 0,     // reais guardados na "caixinha do dólar" esperando o envio mínimo
   minRemitUSD: 50,      // envio mínimo para o exterior (Nomad: US$ 50); 0 = envia todo mês
+  lock: null,           // senha de acesso: { salt, hash, iterations, hint } (só o hash, nunca a senha)
+  autoLockMin: 15,      // bloqueia sozinho depois de N minutos parado (0 = nunca)
+  startHidden: false,   // abrir sempre com os valores ocultos
 };
 
 /** ticker → { ticker, type, asset, analysis } a partir dos relatórios do mês. */

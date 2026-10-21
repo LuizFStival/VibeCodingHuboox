@@ -267,3 +267,28 @@ details.card > summary.card-summary { cursor: pointer; list-style-position: insi
 .rank-group { display: grid; gap: 6px; align-content: start; min-width: 0; }
 .rank-group h3 { color: var(--text); }
 .score { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ---------- senha e "ocultar valores" */
+.lock-screen { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: var(--bg); }
+.lock-screen[hidden] { display: none; }
+.lock-box { width: min(360px, 100%); display: flex; flex-direction: column; gap: 12px; align-items: stretch; text-align: center; padding: 28px 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); box-shadow: 0 20px 60px rgba(0,0,0,.18); }
+.lock-box h2 { margin: 0; }
+.lock-box p { margin: 0; }
+.lock-box input { font-size: 18px; padding: 12px; text-align: center; }
+.lock-mark { width: 48px; height: 48px; border-radius: 12px; align-self: center; }
+.lock-error { color: #c0392b; }
+.lock-box details { text-align: left; }
+body.locked .topbar-actions, body.locked .tabs, body.locked main, body.locked #jobs { visibility: hidden; }
+body.privacy .tab-panel input[type="number"], body.privacy .tab-panel input[inputmode="decimal"], body.privacy .tab-panel .input-money { filter: blur(6px); }
+body.privacy .tab-panel input:focus { filter: none; }
+#privacyBtn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.step { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: inherit; font: inherit; cursor: pointer; }
+.step:hover { background: var(--surface-2); }
+.step .n { font-weight: 800; font-size: 13px; color: var(--muted); }
+.step.ok { border-color: var(--accent); }
+.step.ok .n { color: var(--accent); }
+.step.now { border-color: #d4a017; box-shadow: 0 0 0 2px rgba(212,160,23,.18); }
+.step b { font-size: 14px; }
+.step span.small { color: var(--muted); }
+.reg-table input { width: 110px; }

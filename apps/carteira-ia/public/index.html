@@ -21,6 +21,8 @@
         <span class="small muted">Mês</span>
         <select id="monthSelect" aria-label="Selecionar mês"></select>
       </label>
+      <button id="privacyBtn" class="btn" type="button" aria-pressed="false" title="Esconde os valores em reais e dólares (para mostrar a tela a alguém)">Ocultar valores</button>
+      <button id="lockBtn" class="btn" type="button" title="Bloqueia o app até digitar a senha" hidden>Bloquear</button>
       <button id="uploadBtn" class="btn primary" type="button">Subir relatórios (PDF)</button>
       <input id="fileInput" type="file" accept=".pdf,application/pdf,.json,application/json" multiple hidden>
     </div>
@@ -72,6 +74,22 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <div id="lockScreen" class="lock-screen" hidden>
+    <form id="lockForm" class="lock-box" autocomplete="off">
+      <span class="brand-mark lock-mark" aria-hidden="true"></span>
+      <h2>Carteira IA</h2>
+      <p class="muted small">Digite a sua senha para ver a carteira.</p>
+      <input id="lockInput" type="password" placeholder="Senha" aria-label="Senha" autocomplete="current-password">
+      <p id="lockError" class="lock-error small" hidden>Senha incorreta.</p>
+      <button class="btn primary" type="submit">Entrar</button>
+      <details class="small muted">
+        <summary>Esqueci a senha</summary>
+        <p id="lockHint"></p>
+        <p>No painel do Claude: peça no chat "remova a senha da Carteira IA". No navegador: restaure um backup ou limpe os dados do site (apaga a carteira deste navegador).</p>
+      </details>
+    </form>
+  </div>
 
   <script type="module" src="app.js"></script>
 </body>

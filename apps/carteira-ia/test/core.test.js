@@ -589,3 +589,42 @@ test('caixinha do dólar: guarda a parte do internacional até dar o envio míni
   const now = planAporte({ amount: 1000, holdings: [], reports: r, settings: { ...st, minRemitUSD: 0 } });
   assert.ok(now.remitNow && now.lines.some((l) => l.ticker === 'USA'));
 });
+
+import { makeLock, checkPassword, maskMoney } from '../public/core/lock.js';
+
+test('senha: guarda só o hash e confere', async () => {
+  const lock = await makeLock('minha senha', 'dica');
+  assert.ok(lock.hash && lock.salt && !JSON.stringify(lock).includes('minha senha'));
+  assert.equal(lock.hint, 'dica');
+  assert.equal(await checkPassword('minha senha', lock), true);
+  assert.equal(await checkPassword('outra', lock), false);
+  await assert.rejects(() => makeLock('123'), /pelo menos 4/);
+});
+
+test('ocultar valores troca dinheiro por •••', () => {
+  assert.equal(maskMoney('Total R$ 1.234,56 e US$ 114,83 · 38%'), 'Total R$ ••• e US$ ••• · 38%');
+  assert.equal(maskMoney('+R$ 52'), '+R$ •••');
+});
+
+test('registrar aporte: soma às posições com preço médio e dá para desfazer', () => {
+  const svc = createService(createStore(memoryStorage()));
+  svc.upsertHolding({ ticker: 'VALE3', type: 'acoes', qty: 1, avgPrice: 70 });
+  svc.updateSettings({ usdCash: 114.83, dollarReserve: 0 });
+  const rec = svc.registerAporte('2026-10', [
+    { ticker: 'VALE3', type: 'acoes', qty: 3, price: 62 },
+    { ticker: 'O', type: 'internacional', qty: 0.3077, price: 55.4, segment: 'REIT' },
+    { ticker: 'XXXX3', qty: 0, price: 10 },
+  ], { cash: { usdCash: 0, dollarReserve: 0 }, brlAmount: 757.4 });
+  const vale = svc.holdings().find((x) => x.ticker === 'VALE3');
+  assert.equal(vale.qty, 4);
+  assert.equal(vale.avgPrice, 64); // (70 + 3×62) / 4
+  assert.equal(svc.holdings().find((x) => x.ticker === 'O').qty, 0.3077);
+  assert.equal(svc.settings().usdCash, 0);
+  assert.equal(svc.aportes().length, 1);
+  assert.equal(rec.buys.length, 2, 'linha sem quantidade não entra');
+  assert.ok(svc.snapshots().some((x) => x.month === '2026-10'), 'salva o balanço do mês');
+  svc.undoAporte(rec.id);
+  assert.deepEqual(svc.holdings().map((x) => [x.ticker, x.qty, x.avgPrice]), [['VALE3', 1, 70]]);
+  assert.equal(svc.settings().usdCash, 114.83);
+  assert.equal(svc.aportes().length, 0);
+});

@@ -16,6 +16,7 @@ import { VERDICTS } from './core/prompts.js';
 import { createClaudeAI } from './core/claude-ai.js';
 import { createDbStorage } from './core/db-storage.js';
 import { GROUPS } from './core/ranking.js';
+import { makeLock, checkPassword, maskMoney, MASK, MIN_PASSWORD } from './core/lock.js';
 
 // store/svc são criados no boot(): no painel, depois de carregar o banco do Claude.
 let store;
@@ -41,6 +42,9 @@ const state = {
   busy: false,
   diag: null,           // resultado do último teste em Configurações
   models: null,         // modelos disponíveis para a chave (listModels)
+  privacy: false,       // "ocultar valores": dinheiro e quantidades viram •••
+  locked: false,        // tela de senha aberta
+  reg: {},              // compras editadas no cartão "Registrar compras", por ticker
 };
 
 // ---------- utilidades
@@ -52,12 +56,13 @@ const monthLong = (m) => {
   return `${name[0].toUpperCase()}${name.slice(1)} ${y}`;
 };
 const monthShort = (m) => { const [y, mm] = m.split('-'); return `${MONTHS[+mm - 1]}/${y.slice(2)}`; };
-const brl = (v, digits = 2) => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: digits, maximumFractionDigits: digits });
-const money = (v, cur) => (v === null || v === undefined ? '—' : v.toLocaleString('pt-BR', { style: 'currency', currency: cur, minimumFractionDigits: 2 }));
+// Com "ocultar valores" ligado, dinheiro e quantidades saem como ••• (as porcentagens continuam).
+const brl = (v, digits = 2) => (state.privacy ? `R$ ${MASK}` : (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: digits, maximumFractionDigits: digits }));
+const money = (v, cur) => (v === null || v === undefined ? '—' : state.privacy ? `${cur === 'USD' ? 'US$' : 'R$'} ${MASK}` : v.toLocaleString('pt-BR', { style: 'currency', currency: cur, minimumFractionDigits: 2 }));
 const pct = (x, digits = 1) => (x === null || x === undefined || Number.isNaN(x) ? '—' : `${(x * 100).toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits })}%`);
 const signedPct = (x, digits = 1) => (x === null || x === undefined ? '—' : `${x > 0 ? '+' : ''}${pct(x, digits)}`);
-const qtyFmt = (q) => q.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
-const num = (v) => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const qtyFmt = (q) => (state.privacy ? MASK : q.toLocaleString('pt-BR', { maximumFractionDigits: 4 }));
+const num = (v) => (state.privacy ? MASK : (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const REC_LABEL = { COMPRAR: 'Comprar', AGUARDAR: 'Aguardar', MANTER: 'Manter', VENDER: 'Vender' };
 
 function h(tag, attrs = {}, ...children) {
@@ -106,7 +111,7 @@ function bars(rows, { max } = {}) {
 let toastTimer;
 function toast(msg, isError = false) {
   const t = $('#toast');
-  t.textContent = msg;
+  t.textContent = state.privacy ? maskMoney(msg) : msg;
   t.className = `toast${isError ? ' error' : ''}`;
   t.hidden = false;
   clearTimeout(toastTimer);
@@ -177,6 +182,7 @@ function setTab(tab) {
 // deste; nesse caso o segundo espera o primeiro terminar.
 let rendering = false;
 function render() {
+  if (state.locked) return; // com a tela de senha aberta, nada de dados na página
   if (rendering) { queueMicrotask(render); return; }
   rendering = true;
   try {
@@ -184,8 +190,70 @@ function render() {
     const panel = $(`#tab-${state.tab}`);
     const fn = { reports: renderReports, analysis: renderAnalysis, mine: renderMine, aporte: renderAporte, settings: renderSettings }[state.tab];
     panel.replaceChildren(...[fn()].flat(Infinity).filter(Boolean));
+    if (state.privacy) maskPanel(panel);
   } finally { rendering = false; }
 }
+
+// ---------- ocultar valores e senha
+/** Rede de segurança do "ocultar valores": troca R$/US$ que vieram em textos prontos (avisos, motivos). */
+function maskPanel(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (/(R\$|US\$)\s?-?\+?\d/.test(n.nodeValue)) n.nodeValue = maskMoney(n.nodeValue);
+  }
+}
+
+function setPrivacy(on) {
+  state.privacy = on;
+  try { localStorage.setItem('carteira-ia:privacy', on ? '1' : '0'); } catch { /* sem armazenamento */ }
+  document.body.classList.toggle('privacy', on);
+  const b = $('#privacyBtn');
+  b.setAttribute('aria-pressed', String(on));
+  b.textContent = on ? 'Mostrar valores' : 'Ocultar valores';
+  render();
+}
+
+const UNLOCK_KEY = 'carteira-ia:unlocked';
+const lockOf = () => svc.settings().lock;
+function sessionUnlocked() {
+  const lock = lockOf();
+  if (!lock) return true;
+  try { return sessionStorage.getItem(UNLOCK_KEY) === lock.hash; } catch { return false; }
+}
+function refreshLockBtn() { $('#lockBtn').hidden = !lockOf(); }
+
+/** Fecha o app atrás da tela de senha (tira os dados da tela) e resolve quando a senha confere. */
+function lockApp() {
+  if (!lockOf()) return Promise.resolve();
+  try { sessionStorage.removeItem(UNLOCK_KEY); } catch { /* ignora */ }
+  state.locked = true;
+  document.body.classList.add('locked');
+  for (const p of document.querySelectorAll('.tab-panel')) p.replaceChildren();
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  const screen = $('#lockScreen'), input = $('#lockInput'), err = $('#lockError');
+  const hint = lockOf().hint;
+  $('#lockHint').textContent = hint ? `Sua dica: ${hint}` : 'Você não cadastrou uma dica.';
+  screen.hidden = false; err.hidden = true; input.value = '';
+  setTimeout(() => input.focus(), 50);
+  return new Promise((resolve) => {
+    $('#lockForm').onsubmit = async (e) => {
+      e.preventDefault();
+      if (!(await checkPassword(input.value, lockOf()))) { err.hidden = false; input.select(); return; }
+      try { sessionStorage.setItem(UNLOCK_KEY, lockOf().hash); } catch { /* pede de novo ao recarregar */ }
+      state.locked = false; lastActivity = Date.now();
+      screen.hidden = true; document.body.classList.remove('locked');
+      render(); resolve();
+    };
+  });
+}
+
+// Bloqueio automático depois de um tempo sem mexer.
+let lastActivity = Date.now();
+for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true });
+setInterval(() => {
+  const min = Number(svc?.settings().autoLockMin) || 0;
+  if (svc && lockOf() && !state.locked && min > 0 && Date.now() - lastActivity > min * 60000) lockApp();
+}, 20000);
 
 function emptyState() {
   return h('section', { class: 'stack' },
@@ -234,6 +302,30 @@ function manualReadCard(open = false) {
       } }, '2 · Importar leitura'))));
 }
 
+/** O mês em 5 passos, com o que já foi feito. */
+function stepsCard() {
+  const month = state.month;
+  const reports = svc.reportsFor(month);
+  const analyses = svc.analysesFor(month);
+  const total = reports.reduce((s, r) => s + r.assets.length, 0);
+  const researched = reports.reduce((s, r) => s + r.assets.filter((a) => analyses[a.ticker]).length, 0);
+  const reg = svc.aportes().find((a) => a.month === month);
+  const lastReg = svc.aportes()[0];
+  const steps = [
+    { tab: 'reports', title: 'Subir os PDFs', ok: reports.length >= 3, info: `${reports.length} de 3 carteiras` },
+    { tab: 'analysis', title: 'Pesquisar os ativos', ok: total > 0 && researched >= total, info: total ? `${researched} de ${total} pesquisados` : 'depois dos PDFs' },
+    { tab: 'mine', title: 'Conferir minha carteira', ok: Boolean(reg) || svc.holdings().length > 0, info: lastReg ? `último registro: ${new Date(lastReg.at).toLocaleDateString('pt-BR')}` : `${svc.holdings().length} posições` },
+    { tab: 'aporte', title: 'Propor o aporte', ok: Boolean(reg), info: 'perfil, valor e dólar' },
+    { tab: 'aporte', title: 'Registrar as compras', ok: Boolean(reg), info: reg ? `feito em ${new Date(reg.at).toLocaleDateString('pt-BR')}` : 'depois de comprar na corretora' },
+  ];
+  const next = steps.findIndex((x) => !x.ok);
+  const now = new Date().toISOString().slice(0, 7);
+  const newer = svc.months()[0] < now;
+  return card(`Seu aporte de ${monthLong(month)} em 5 passos`, newer ? h('span', { class: 'badge rec-AGUARDAR' }, `Chegou ${monthLong(now)}: suba os PDFs novos`) : null,
+    h('div', { class: 'steps' }, steps.map((st, i) => h('button', { class: `step ${st.ok ? 'ok' : i === next ? 'now' : ''}`, type: 'button', onclick: () => setTab(st.tab) },
+      h('span', { class: 'n' }, st.ok ? `✓ Passo ${i + 1}` : `Passo ${i + 1}`), h('b', {}, st.title), h('span', { class: 'small' }, st.info)))));
+}
+
 // ---------- 1 · Carteiras
 function renderReports() {
   if (!state.month) return emptyState();
@@ -259,7 +351,7 @@ function renderReports() {
   }));
 
   const r = reports.find((x) => x.type === state.type);
-  return [cards, r ? reportDetail(r, analyses) : null, manualReadCard(false)];
+  return [stepsCard(), cards, r ? reportDetail(r, analyses) : null, manualReadCard(false)];
 }
 
 function reportDetail(r, analyses) {
@@ -679,7 +771,7 @@ function renderMine() {
 
   return [filterBar, kpis, h('div', { class: 'grid two' }, byAsset, classCard), segmentCard, diagnosisCard(cmp, sel),
     aiReviewCard('portfolio', { title: 'Análise da carteira pela IA', intro: 'A IA cruza a sua carteira com o ranking e as pesquisas do mês: concentração, pontos fortes, posições em risco, o que falta e as prioridades dos próximos aportes.' }),
-    balanceCard(cmp), holdingsCard, alertsCard, ...perClass];
+    balanceCard(cmp), aportesHistoryCard(), holdingsCard, alertsCard, ...perClass];
 }
 
 /** Diagnóstico: cada posição cruzada com o ranking do mês. */
@@ -757,7 +849,7 @@ function pasteHoldings() {
 function renderAporte() {
   if (!state.month) return emptyState();
   const s = svc.settings();
-  const aporte = Number(s.aporteAmount ?? 757.4) || 0;
+  const aporte = Number(s.aporteAmount ?? 500) || 0;
   const plan = svc.plan(state.month, aporte);
   const planKey = JSON.stringify([state.month, aporte, s, plan.lines.map((l) => [l.ticker, l.qty])]);
   if (state.review && state.review.key !== planKey) state.review = null;
@@ -812,7 +904,7 @@ function renderAporte() {
     proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}${Number(s.usdCash) > 0 ? ` + US$ ${num(s.usdCash)}` : ''}`);
   const proposeCard = h('div', { class: 'card row' }, proposeBtn,
     h('span', { class: 'muted small' }, state.proposedKey && !proposed ? 'Você mudou o valor ou a divisão: clique para recalcular a proposta.' : proposed ? 'Proposta abaixo. Mudou algo acima? Clique de novo.' : 'Escolha o perfil e o valor acima e clique para ver onde colocar o dinheiro.'));
-  if (!proposed) return [form, proposeCard];
+  if (!proposed) return [form, proposeCard, registeredCard(state.month)];
 
   const kpis = h('div', { class: 'grid kpis', id: 'plano' },
     kpi('Aporte em reais', brl(plan.brlAmount), plan.usdCash > 0 || plan.reserve > 0 ? [plan.usdCash > 0 ? `+ US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? `+ ${brl(plan.reserve)} na caixinha` : ''].filter(Boolean).join(' ') : null, 'hero'),
@@ -891,19 +983,77 @@ function renderAporte() {
       ov.include.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Incluídos por você:'), ov.include.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `${t} ✕`))) : null,
       ov.exclude.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Tirados por você:'), ov.exclude.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `desfazer ${t}`))) : null));
 
-  // Depois de executar as compras, guarda a caixinha e o dólar que sobrou para o próximo mês.
-  const nextUsd = Math.round(plan.usdLeftover * 100) / 100;
-  const nextReserve = Math.round(plan.reserveAfter * 100) / 100;
-  const cashChanged = Math.abs(nextUsd - (Number(s.usdCash) || 0)) > 0.005 || Math.abs(nextReserve - (Number(s.dollarReserve) || 0)) > 0.005;
-  const register = cashChanged ? h('div', { class: 'card row' },
-    h('button', { class: 'btn', type: 'button', onclick: () => {
-      svc.updateSettings({ usdCash: nextUsd, dollarReserve: nextReserve });
-      toast(`Para o próximo mês: caixinha ${brl(nextReserve)} e US$ ${num(nextUsd)} na corretora.`);
-      render();
-    } }, 'Fiz este aporte: atualizar caixinha e dólar'),
-    h('span', { class: 'muted small' }, `Depois de comprar${plan.remitNow ? ' e enviar o dinheiro' : ''}: a caixinha passa a ${brl(nextReserve)} e o dólar na corretora a US$ ${num(nextUsd)}. Lembre de atualizar as posições em Minha carteira.`)) : null;
+  return [form, proposeCard, kpis, balance, notices, lines, adjust, attention, registerCard(plan, s), h('div', { class: 'grid two' }, classes, review)];
+}
 
-  return [form, proposeCard, kpis, register, balance, notices, lines, adjust, attention, h('div', { class: 'grid two' }, classes, review)];
+/**
+ * Depois de comprar na corretora: confere quantidade e preço pago de cada linha (pode mudar)
+ * e registra. As posições, o caixa em dólar/caixinha e o balanço do mês se atualizam sozinhos.
+ */
+function registeredCard(month) {
+  const rec = svc.aportes().find((a) => a.month === month);
+  if (!rec) return null;
+  const last = svc.aportes()[0];
+  {
+    return card(`Aporte de ${monthLong(month)} registrado`, h('span', { class: 'muted small' }, new Date(rec.at).toLocaleString('pt-BR')),
+      h('p', { class: 'small' }, rec.buys.map((b) => `${b.ticker} +${qtyFmt(b.qty)}`).join(' · ')),
+      h('p', { class: 'muted small' }, 'As compras já estão em Minha carteira e o balanço do mês foi salvo. Comprou algo diferente? Desfaça e registre de novo, ou ajuste a posição em Minha carteira.'),
+      last?.id === rec.id ? h('div', { class: 'row' }, confirmButton('Desfazer este registro', 'Clique de novo para desfazer', () => { svc.undoAporte(rec.id); state.reg = {}; toast('Registro desfeito: posições e caixa voltaram como estavam.'); render(); }, 'btn small')) : null);
+  }
+}
+
+function registerCard(plan, s) {
+  const month = state.month;
+  const done = registeredCard(month);
+  if (done) return done;
+  const fx = (l) => (l.currency === 'USD' ? Number(s.usdBrl) || 0 : 1);
+  const regKey = `${month}|${plan.lines.map((l) => `${l.ticker}:${l.qty}`).join(',')}`;
+  if (state.regKey !== regKey) { state.reg = {}; state.regKey = regKey; } // proposta mudou: recomeça
+  const rows = plan.lines.map((l) => {
+    state.reg[l.ticker] ??= { on: true, qty: l.qty, price: l.price };
+    return { l, r: state.reg[l.ticker] };
+  });
+  const intlSpent = rows.filter(({ l, r }) => r.on && l.currency === 'USD').reduce((t, { l, r }) => t + (Number(r.qty) || 0) * (Number(r.price) || 0) * fx(l), 0);
+  const usdPool = (plan.usdCashBRL || 0) + (plan.remitNow ? plan.remitted : 0);
+  const usdAfter = s.usdBrl ? Math.max(0, usdPool - intlSpent) / s.usdBrl : 0;
+  const cash = { usdCash: Math.round(usdAfter * 100) / 100, dollarReserve: Math.round((plan.reserveAfter || 0) * 100) / 100 };
+  const field = (r, key, step) => h('input', { type: 'number', min: 0, step, value: String(r[key] ?? ''), onchange: (e) => { r[key] = Number(e.target.value) || 0; render(); } });
+  const total = rows.filter(({ r }) => r.on).reduce((t, { l, r }) => t + (Number(r.qty) || 0) * (Number(r.price) || 0) * fx(l), 0);
+  return card('Registrar as compras na minha carteira', h('span', { class: 'muted small' }, 'depois de comprar na corretora'),
+    h('p', { class: 'muted small' }, 'Confira o que você comprou de verdade: mude a quantidade ou o preço pago se for diferente da proposta, ou desmarque o que não comprou. Ao registrar, as posições somam (com o preço médio recalculado), o dólar e a caixinha ficam prontos para o próximo mês e o balanço do mês é salvo.'),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'reg-table' },
+      h('thead', {}, h('tr', {}, ['', 'Ativo', 'Quantidade', 'Preço pago', 'Total'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, rows.map(({ l, r }) => h('tr', {},
+        h('td', {}, h('input', { type: 'checkbox', checked: r.on, 'aria-label': `Comprei ${l.ticker}`, onchange: (e) => { r.on = e.target.checked; render(); } })),
+        h('td', { class: 'tk' }, l.ticker, h('small', {}, l.ownedQty ? `tem ${qtyFmt(l.ownedQty)}` : 'novo')),
+        h('td', {}, field(r, 'qty', l.fractional ? 0.0001 : 1)),
+        h('td', {}, field(r, 'price', 0.01), h('span', { class: 'muted small' }, ` ${l.currency === 'USD' ? 'US$' : 'R$'}`)),
+        h('td', { class: 'num' }, brl((Number(r.qty) || 0) * (Number(r.price) || 0) * fx(l)))))),
+      h('tfoot', {}, h('tr', {}, h('td', { colspan: 4 }, 'Total comprado'), h('td', { class: 'num' }, brl(total)))))),
+    h('p', { class: 'muted small' }, `Depois do registro: dólar na corretora US$ ${num(cash.usdCash)} · caixinha do dólar ${brl(cash.dollarReserve)}.`),
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: () => {
+      try {
+        const buys = rows.filter(({ r }) => r.on).map(({ l, r }) => ({ ticker: l.ticker, type: l.type, qty: r.qty, price: r.price, segment: l.segment }));
+        const rec = svc.registerAporte(month, buys, { cash, brlAmount: plan.brlAmount });
+        state.reg = {};
+        toast(`Aporte registrado: ${rec.buys.length} compra(s) somadas à sua carteira.`);
+        render();
+      } catch (e) { toast(e.message, true); }
+    } }, 'Registrar na minha carteira')));
+}
+
+/** Histórico dos aportes registrados (Minha carteira). */
+function aportesHistoryCard() {
+  const list = svc.aportes();
+  if (!list.length) return null;
+  return card('Histórico de aportes', h('span', { class: 'muted small' }, `${list.length} registrado(s)`),
+    h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, ['Mês', 'Registrado em', 'Compras', 'Aporte em reais'].map((x) => h('th', {}, x)))),
+      h('tbody', {}, list.map((a) => h('tr', {},
+        h('td', {}, monthLong(a.month)),
+        h('td', {}, new Date(a.at).toLocaleDateString('pt-BR')),
+        h('td', { class: 'small', style: { 'white-space': 'normal' } }, a.buys.map((b) => `${b.ticker} +${qtyFmt(b.qty)}`).join(' · ')),
+        h('td', { class: 'num' }, a.brlAmount ? brl(a.brlAmount) : '—')))))));
 }
 
 /** Tira/inclui um ativo da proposta do mês e recalcula na hora, mantendo a proposta aberta. */
@@ -1028,7 +1178,49 @@ function renderSettings() {
         confirmButton('Apagar tudo', 'Clique de novo para apagar relatórios, análises e carteira', () => { svc.clearAll(); toast('Dados apagados.'); render(); }, 'btn ghost')),
       h('p', { class: 'muted small' }, 'Também dá para subir um relatório já extraído em .json (mesmo formato do "Corrigir dados", com "type" e "month") pelo botão Subir relatórios.')));
 
-  return [api, data];
+  return [securityCard(), api, data];
+}
+
+/** Senha de acesso, bloqueio automático e "ocultar valores". */
+function securityCard() {
+  const s = svc.settings();
+  const lock = s.lock;
+  const pw = (ph, ac = 'new-password') => h('input', { type: 'password', placeholder: ph, autocomplete: ac, style: { flex: '1 1 180px' } });
+  const cur = pw('Senha atual', 'current-password'), n1 = pw(`Nova senha (mín. ${MIN_PASSWORD})`), n2 = pw('Repita a nova senha');
+  const hint = h('input', { type: 'text', placeholder: 'Dica para lembrar (opcional, aparece na tela de senha)', maxlength: 80, style: { flex: '1 1 260px' }, value: lock?.hint ?? '' });
+  const save = async () => {
+    try {
+      if (lock && !(await checkPassword(cur.value, lock))) throw new Error('A senha atual não confere.');
+      if (n1.value !== n2.value) throw new Error('As duas senhas novas não são iguais.');
+      const next = await makeLock(n1.value, hint.value);
+      svc.updateSettings({ lock: next });
+      try { sessionStorage.setItem(UNLOCK_KEY, next.hash); } catch { /* ignora */ }
+      refreshLockBtn();
+      toast(lock ? 'Senha trocada.' : 'Senha ativada. O app pede a senha ao abrir e depois de um tempo parado.');
+      render();
+    } catch (e) { toast(e.message, true); }
+  };
+  const remove = async () => {
+    if (!(await checkPassword(cur.value, lock))) { toast('Digite a senha atual para remover.', true); return; }
+    svc.updateSettings({ lock: null }); refreshLockBtn(); toast('Senha removida.'); render();
+  };
+  return card('Senha e privacidade', lock ? h('span', { class: 'badge rec-COMPRAR' }, 'senha ativa') : h('span', { class: 'badge rec-MANTER' }, 'sem senha'),
+    h('div', { class: 'stack' },
+      h('p', { class: 'muted small' }, 'A senha impede que alguém que abra o app (no seu computador ou no seu link) veja a carteira. Ela é guardada só como uma "impressão digital" (hash), nunca em texto. É uma trava simples, não um cofre: quem tiver acesso ao seu navegador ou à sua conta ainda consegue chegar aos dados.'),
+      lock ? h('div', { class: 'row' }, cur) : null,
+      h('div', { class: 'row' }, n1, n2),
+      h('div', { class: 'row' }, hint),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn primary', type: 'button', onclick: save }, lock ? 'Trocar senha' : 'Ativar senha'),
+        lock ? h('button', { class: 'btn ghost', type: 'button', onclick: remove }, 'Remover senha') : null,
+        lock ? h('button', { class: 'btn', type: 'button', onclick: () => lockApp() }, 'Bloquear agora') : null),
+      lock ? h('label', { class: 'check' }, 'Bloquear sozinho depois de',
+        h('select', { onchange: (e) => { svc.updateSettings({ autoLockMin: Number(e.target.value) }); toast('Bloqueio automático atualizado.'); } },
+          [[5, '5 minutos'], [15, '15 minutos'], [30, '30 minutos'], [60, '1 hora'], [0, 'nunca']].map(([v, l]) => h('option', { value: String(v), selected: (Number(s.autoLockMin ?? 15)) === v }, l))),
+        'sem mexer') : null,
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.startHidden === true, onchange: (e) => { svc.updateSettings({ startHidden: e.target.checked }); toast(e.target.checked ? 'O app vai abrir com os valores ocultos.' : 'O app abre com os valores visíveis.'); } }),
+        'Abrir sempre com os valores ocultos'),
+      h('p', { class: 'muted small' }, 'Botão "Ocultar valores" (no topo): troca reais, dólares e quantidades por •••, inclusive nos campos. As porcentagens e os nomes dos ativos continuam, para você mostrar a tela a alguém sem expor quanto tem.')));
 }
 
 // ---------- diálogos
@@ -1158,6 +1350,15 @@ async function boot() {
     } catch { /* sem dados antigos */ }
   }
   if (EMBEDDED && !claudeAI) { $('#uploadBtn').textContent = 'Importar .json'; $('#fileInput').accept = '.json,application/json'; }
-  render();
+  let hidden = false;
+  try { hidden = localStorage.getItem('carteira-ia:privacy') === '1'; } catch { /* sem armazenamento */ }
+  state.privacy = hidden || svc.settings().startHidden === true;
+  document.body.classList.toggle('privacy', state.privacy);
+  $('#privacyBtn').setAttribute('aria-pressed', String(state.privacy));
+  $('#privacyBtn').textContent = state.privacy ? 'Mostrar valores' : 'Ocultar valores';
+  refreshLockBtn();
+  if (!sessionUnlocked()) await lockApp(); else render();
 }
+$('#privacyBtn').addEventListener('click', () => setPrivacy(!state.privacy));
+$('#lockBtn').addEventListener('click', () => lockApp());
 boot();

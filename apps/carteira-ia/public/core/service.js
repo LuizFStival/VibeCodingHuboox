@@ -304,6 +304,56 @@ export function createService(store) {
     },
     removeSnapshot(month) { store.update((data) => { data.snapshots = data.snapshots.filter((x) => x.month !== month); }); },
 
+    // ---------------- aportes registrados (as compras feitas entram na carteira)
+    aportes: () => [...(d().aportes ?? [])].sort((a, b) => b.at.localeCompare(a.at)),
+    /**
+     * Soma as compras às posições (preço médio ponderado), guarda o caixa em dólar/caixinha
+     * do mês seguinte e salva o balanço do mês. `buys`: [{ ticker, type, qty, price, segment }],
+     * com o preço na moeda do ativo. Guarda o estado anterior para poder desfazer.
+     */
+    registerAporte(month, buys, { cash = null, brlAmount = null } = {}) {
+      const valid = buys.map((b) => ({ ...b, ticker: normalizeTicker(b.ticker), qty: parseNumber(b.qty), price: parseNumber(b.price) }))
+        .filter((b) => b.ticker && b.qty > 0);
+      if (!valid.length) throw new Error('Nenhuma compra com quantidade para registrar.');
+      const r4 = (x) => Math.round(x * 10000) / 10000;
+      const rec = { id: uid(), month, at: new Date().toISOString(), brlAmount, buys: valid, prev: [], cash: null };
+      store.update((data) => {
+        for (const b of valid) {
+          const i = data.holdings.findIndex((x) => x.ticker === b.ticker);
+          const old = i >= 0 ? data.holdings[i] : null;
+          rec.prev.push(old ? { ...old } : { ticker: b.ticker, added: true });
+          if (old) {
+            const qty = r4(old.qty + b.qty);
+            const avg = old.avgPrice && b.price ? (old.qty * old.avgPrice + b.qty * b.price) / qty : (old.avgPrice || b.price || null);
+            data.holdings[i] = { ...old, qty, avgPrice: avg ? r4(avg) : null };
+          } else {
+            data.holdings.push({ id: uid(), ticker: b.ticker, type: TYPE_IDS.includes(b.type) ? b.type : classifyTicker(b.ticker, buildUniverse(data.reports)), qty: r4(b.qty), avgPrice: b.price || null, price: null, segment: b.segment || null });
+          }
+        }
+        if (cash) {
+          rec.cash = { before: { usdCash: data.settings.usdCash ?? 0, dollarReserve: data.settings.dollarReserve ?? 0 }, after: cash };
+          data.settings = { ...data.settings, ...cash };
+        }
+        data.aportes = [...(data.aportes ?? []), rec];
+      });
+      this.saveSnapshot(month);
+      return rec;
+    },
+    /** Desfaz o último aporte registrado: devolve as posições e o caixa como estavam. */
+    undoAporte(id) {
+      const last = this.aportes()[0];
+      if (!last || last.id !== id) throw new Error('Só dá para desfazer o último aporte registrado.');
+      store.update((data) => {
+        for (const p of last.prev) {
+          const i = data.holdings.findIndex((x) => x.ticker === p.ticker);
+          if (p.added) { if (i >= 0) data.holdings.splice(i, 1); } else if (i >= 0) data.holdings[i] = { ...p }; else data.holdings.push({ ...p });
+        }
+        if (last.cash) data.settings = { ...data.settings, ...last.cash.before };
+        data.aportes = data.aportes.filter((x) => x.id !== id);
+      });
+      this.saveSnapshot(last.month);
+    },
+
     // ---------------- configurações
     settings: () => d().settings,
     updateSettings(patch) { store.update((data) => { data.settings = { ...data.settings, ...patch, targets: { ...data.settings.targets, ...(patch.targets ?? {}) } }; }); },
