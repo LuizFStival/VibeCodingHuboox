@@ -292,7 +292,7 @@ export function portfolioReviewPrompt({ month, cmp, ranking, today, web = false 
   const rows = cmp.rows.map((r) => {
     const rk = byTicker.get(r.ticker);
     const res = r.cost ? `${(((r.value - r.cost) / r.cost) * 100).toFixed(1)}%` : '—';
-    return `${r.ticker} (${ASSET_TYPES[r.type].short}) ${brlTxt(r.value)} = ${((r.value / (cmp.total || 1)) * 100).toFixed(1)}% do patrimônio · resultado ${res} · ${rk ? `nota ${rk.score} (${GROUPS[rk.group].label}), casa ${rk.rec}${rk.an?.summary ? ` — ${rk.an.summary.slice(0, 160)}` : ''}` : 'fora das carteiras recomendadas do mês'}`;
+    return `${r.ticker} (${ASSET_TYPES[r.type].short})${r.frozen ? ' [CONGELADO pelo investidor: mantém, não aporta mais]' : ''} ${brlTxt(r.value)} = ${((r.value / (cmp.total || 1)) * 100).toFixed(1)}% do patrimônio · resultado ${res} · ${rk ? `nota ${rk.score} (${GROUPS[rk.group].label}), casa ${rk.rec}${rk.an?.summary ? ` — ${rk.an.summary.slice(0, 160)}` : ''}` : 'fora das carteiras recomendadas do mês'}`;
   });
   const classes = cmp.classes.map((c) => `${c.label}: ${(c.pct * 100).toFixed(1)}% (alvo ${(c.target * 100).toFixed(0)}%)`).join(' · ');
   return [
@@ -328,7 +328,7 @@ export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
     'Carteira atual por classe e segmento:',
     ...['acoes', 'fiis', 'internacional'].map((t) => {
       const rs = cmp.rows.filter((r) => r.type === t);
-      return `${ASSET_TYPES[t].short}: ${rs.length ? rs.map((r) => `${r.ticker} [${r.segment ?? '?'}] ${brlTxt(r.value)}`).join(', ') : 'nenhum'}`;
+      return `${ASSET_TYPES[t].short}: ${rs.length ? rs.map((r) => `${r.ticker} [${r.segment ?? '?'}${r.frozen ? ', congelado: não sugerir aporte' : ''}] ${brlTxt(r.value)}`).join(', ') : 'nenhum'}`;
     }),
     '',
     'Revise o plano como um analista, considerando:',

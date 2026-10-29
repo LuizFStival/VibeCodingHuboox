@@ -684,7 +684,7 @@ function renderMine() {
     h('tbody', {}, rows.map((r) => {
       const rec = universe.get(r.ticker);
       return h('tr', {},
-        h('td', { class: 'tk' }, r.ticker),
+        h('td', { class: 'tk' }, r.ticker, r.frozen ? h('small', { title: 'Mantido no patrimônio, sem aporte novo' }, '❄ congelado') : null),
         h('td', {}, h('select', { onchange: edit(r, 'type'), 'aria-label': 'Classe' }, TYPE_IDS.map((t) => h('option', { value: t, selected: r.type === t }, ASSET_TYPES[t].short)))),
         h('td', {}, rec?.segment
           ? h('span', { class: 'small', title: 'segmento do relatório do mês' }, rec.segment)
@@ -695,7 +695,9 @@ function renderMine() {
         h('td', { class: 'num' }, brl(r.value)),
         h('td', { class: 'num' }, pct(base ? r.value / base : 0)),
         h('td', {}, rec ? recBadge(rec.rec) : h('span', { class: 'muted small' }, 'fora'), ' ', analyses[r.ticker] ? verdictBadge(analyses[r.ticker].verdict) : null),
-        h('td', {}, h('button', { class: 'btn ghost small', type: 'button', title: 'Remover', onclick: () => { svc.removeHolding(r.id); render(); } }, '✕')));
+        h('td', { style: { 'white-space': 'nowrap' } },
+          h('button', { class: `btn small${r.frozen ? ' primary' : ' ghost'}`, type: 'button', title: r.frozen ? 'Descongelar: volta a poder receber aporte' : 'Congelar: mantém no patrimônio, mas nunca recebe aporte', onclick: () => { svc.setFrozen(r.ticker, !r.frozen); toast(r.frozen ? `${r.ticker} descongelado.` : `${r.ticker} congelado: fica na carteira, sem aporte novo.`); render(); } }, r.frozen ? '❄ congelado' : '❄'),
+          h('button', { class: 'btn ghost small', type: 'button', title: 'Remover', onclick: () => { svc.removeHolding(r.id); render(); } }, '✕')));
     })),
     h('tfoot', {}, h('tr', {}, h('td', { colspan: 6 }, selClass ? `Total em ${ASSET_TYPES[sel].label}` : 'Total'), h('td', { class: 'num' }, brl(base)), h('td', { colspan: 3 }))))) : h('p', { class: 'muted' }, cmp.rows.length ? 'Nenhuma posição nesta classe.' : 'Nenhuma posição ainda. Adicione acima ou cole a lista da sua corretora.');
 
@@ -786,8 +788,9 @@ function diagnosisCard(cmp, sel = 'all') {
     if (share > 0.2) flags.push(`concentração: ${pct(share)} do patrimônio num ativo só`);
     else if (cls?.value && r.value / cls.value > 0.4) flags.push(`pesado na classe: ${pct(r.value / cls.value)} de ${ASSET_TYPES[r.type].short}`);
     if (rk?.upside !== null && rk?.upside < 0) flags.push('preço acima do teto');
-    if (!rk) flags.push('fora das recomendadas do mês: mantido, sem aporte novo');
-    const status = !rk ? { label: 'Fora', cls: 'MANTER' } : rk.group === 'risco' ? { label: 'Em risco', cls: 'VENDER' } : rk.group === 'aguardar' ? { label: 'Aguardar', cls: 'AGUARDAR' } : { label: rk.group === 'oportunidade' ? 'Forte' : 'Bom', cls: 'COMPRAR' };
+    if (!rk && !r.frozen) flags.push('fora das recomendadas do mês: mantido, sem aporte novo');
+    if (r.frozen) flags.unshift('congelado por você: mantido, sem aporte');
+    const status = r.frozen ? { label: 'Congelado', cls: 'MANTER' } : !rk ? { label: 'Fora', cls: 'MANTER' } : rk.group === 'risco' ? { label: 'Em risco', cls: 'VENDER' } : rk.group === 'aguardar' ? { label: 'Aguardar', cls: 'AGUARDAR' } : { label: rk.group === 'oportunidade' ? 'Forte' : 'Bom', cls: 'COMPRAR' };
     return { r, rk, share, flags, status };
   });
   const risky = rows.filter((x) => x.status.label === 'Em risco');

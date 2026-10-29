@@ -237,9 +237,19 @@ export function createService(store) {
       };
       store.update((data) => {
         const i = data.holdings.findIndex((x) => x.id === row.id || x.ticker === row.ticker);
-        if (i >= 0) data.holdings[i] = { ...row, id: data.holdings[i].id, segment: h.segment === undefined ? data.holdings[i].segment ?? null : row.segment }; else data.holdings.push(row);
+        // mantém o que não veio no formulário (ex.: congelado)
+        if (i >= 0) data.holdings[i] = { ...data.holdings[i], ...row, id: data.holdings[i].id, segment: h.segment === undefined ? data.holdings[i].segment ?? null : row.segment }; else data.holdings.push(row);
       });
       return row;
+    },
+
+    /** Congelar: a posição fica no patrimônio e no balanço, mas nunca recebe aporte novo. */
+    setFrozen(ticker, frozen) {
+      store.update((data) => {
+        const hd = data.holdings.find((x) => x.ticker === ticker);
+        if (!hd) throw new Error(`${ticker} não está na sua carteira.`);
+        if (frozen) { hd.frozen = true; hd.frozenAt = new Date().toISOString(); } else { delete hd.frozen; delete hd.frozenAt; }
+      });
     },
 
     removeHolding(id) { store.update((data) => { data.holdings = data.holdings.filter((h) => h.id !== id); }); },
