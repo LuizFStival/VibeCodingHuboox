@@ -650,24 +650,26 @@ test('mês novo não apaga o anterior: outubro fica guardado e novembro entra ao
   assert.ok(svc.snapshots().some((s) => s.month === '2026-10'), 'o balanço de outubro continua no histórico');
 });
 
-test('congelar posição: fica no patrimônio, mas não recebe aporte mesmo recomendada', () => {
+test('congelar: posição antiga fica sem aporte; se voltar ao relatório, volta a valer sozinha', () => {
   const svc = createService(createStore(memoryStorage()));
-  svc.importReportJson({ type: 'fiis', month: '2026-11', assets: [
-    { ticker: 'CPTS11', segment: 'Papel', allocationPct: 50, price: 8, ceilingPrice: 10, recommendation: 'COMPRAR' },
+  const fiis = (month, withCpts) => svc.importReportJson({ type: 'fiis', month, assets: [
+    ...(withCpts ? [{ ticker: 'CPTS11', segment: 'Papel', allocationPct: 50, price: 8, ceilingPrice: 10, recommendation: 'COMPRAR' }] : []),
     { ticker: 'MXRF11', segment: 'Papel', allocationPct: 50, price: 9, ceilingPrice: 10, recommendation: 'COMPRAR' },
   ] });
+  fiis('2026-11', false);
   svc.upsertHolding({ ticker: 'CPTS11', type: 'fiis', qty: 30, avgPrice: 7.86, segment: 'Papel' });
   svc.updateSettings({ targets: { acoes: 0, fiis: 1, internacional: 0 }, maxOrders: 0 });
-  assert.ok(svc.plan('2026-11', 300).lines.some((l) => l.ticker === 'CPTS11'), 'sem congelar, reforça o que já tem');
   svc.setFrozen('CPTS11', true);
   svc.upsertHolding({ ticker: 'CPTS11', qty: 30, avgPrice: 7.9 }); // editar não descongela
   assert.equal(svc.holdings()[0].frozen, true);
-  const plan = svc.plan('2026-11', 300);
-  assert.ok(!plan.lines.some((l) => l.ticker === 'CPTS11'));
-  assert.ok(plan.lines.some((l) => l.ticker === 'MXRF11'), 'o dinheiro do segmento vai para outro fundo');
-  assert.ok(plan.warnings.some((w) => /CPTS11: congelado/.test(w)));
+  const nov = svc.plan('2026-11', 300);
+  assert.ok(!nov.lines.some((l) => l.ticker === 'CPTS11') && nov.lines.some((l) => l.ticker === 'MXRF11'));
   assert.ok(svc.compare('2026-11').total > 200, 'continua no patrimônio');
   assert.ok(svc.compare('2026-11').alerts.some((a) => a.kind === 'congelado'));
-  svc.setFrozen('CPTS11', false);
-  assert.ok(svc.plan('2026-11', 300).lines.some((l) => l.ticker === 'CPTS11'));
+  // dezembro: CPTS11 volta ao relatório como COMPRAR → volta a valer, sem precisar descongelar
+  fiis('2026-12', true);
+  const dez = svc.plan('2026-12', 300);
+  assert.ok(dez.lines.some((l) => l.ticker === 'CPTS11'), 'reforça de novo o que já tem');
+  assert.ok(dez.warnings.some((w) => /CPTS11 voltou ao relatório/.test(w)));
+  assert.ok(svc.compare('2026-12').alerts.some((a) => a.kind === 'voltou'));
 });

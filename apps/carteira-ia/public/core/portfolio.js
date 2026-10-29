@@ -125,7 +125,8 @@ export function comparePortfolio({ holdings, reports, analyses = {}, settings = 
     const u = universe.get(r.ticker);
     if (u?.asset.rec === 'VENDER') alerts.push({ ticker: r.ticker, kind: 'vender', message: `${r.ticker}: o relatório recomenda VENDER.` });
     else if (u?.analysis?.verdict === 'DISCORDA') alerts.push({ ticker: r.ticker, kind: 'discorda', message: `${r.ticker}: a IA discorda da recomendação (${u.asset.rec}).` });
-    else if (r.frozen) alerts.push({ ticker: r.ticker, kind: 'congelado', message: `${r.ticker}: congelado por você. Mantido no patrimônio, sem aporte novo.` });
+    else if (r.frozen && !u) alerts.push({ ticker: r.ticker, kind: 'congelado', message: `${r.ticker}: congelado (antigo, fora do relatório). Mantido no patrimônio, sem aporte; se voltar ao relatório, volta a valer sozinho.` });
+    else if (r.frozen && u) alerts.push({ ticker: r.ticker, kind: 'voltou', message: `${r.ticker}: voltou ao relatório (${u.asset.rec}) e saiu do congelado neste mês.` });
     else if (!u && reports.some((rep) => rep.type === r.type)) alerts.push({ ticker: r.ticker, kind: 'fora', message: `${r.ticker}: não está na carteira recomendada de ${ASSET_TYPES[r.type].short} deste mês. Continua no seu patrimônio; só não recebe aporte novo.` });
     if (!r.priceUsed) alerts.push({ ticker: r.ticker, kind: 'preco', message: `${r.ticker}: sem preço — informe o preço atual para entrar nas contas.` });
   }
@@ -170,14 +171,15 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const totalBefore = cmp.total + usdCashBRL + reserve;
   const totalAfter = totalBefore + brl;
 
-  const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [], user: [], frozen: [] };
-  const frozen = new Set(holdings.filter((h) => h.frozen).map((h) => h.ticker)); // você congelou: mantém, sem aporte
+  const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [], user: [] };
+  // Congelado = posição antiga, fora do relatório: fica na carteira sem aporte. Se o ativo voltar
+  // ao relatório do mês, ele volta a valer normalmente (as regras de compra decidem).
+  const frozenBack = holdings.filter((h) => h.frozen && universe.has(h.ticker)).map((h) => h.ticker);
   const include = new Set(settings.include ?? []); // você mandou incluir (ex.: sugestão da IA)
   const exclude = new Set(settings.exclude ?? []); // você tirou da proposta
   const queue = [];
   const isEligible = (a) => {
     if (exclude.has(a.ticker)) { excluded.user.push(a.ticker); return false; }
-    if (frozen.has(a.ticker)) { excluded.frozen.push(a.ticker); return false; }
     if (include.has(a.ticker) && a.rec !== 'VENDER') {
       const p = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
       if (p) return true;
@@ -411,7 +413,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const usdOf = (v) => (usdBrl ? v / usdBrl : 0);
   if (remitNow) warnings.push(`Envio para o exterior neste mês: R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}${reserve > 0 ? `, dos quais R$ ${fmt(reserve)} já estavam na caixinha do dólar` : ''}). Passa do envio mínimo de US$ ${fmt(minRemit)}; a conversão paga IOF de 1,1% e o spread, então chegam um pouco menos dólares — use no campo "Dólar" a cotação da corretora.`);
   else if (toReserve > 1) warnings.push(`A parte do internacional em reais (R$ ${fmt(toReserve)}) vai para a caixinha do dólar: com ela, a caixinha fica com R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}), abaixo do envio mínimo de US$ ${fmt(minRemit)}. Faltam ≈ US$ ${fmt(Math.max(0, minRemit - usdOf(pending)))} (≈ R$ ${fmt(Math.max(0, minRemit * usdBrl - pending))}); quando passar, o app propõe o envio. Se preferir já mandar este mês, complete a caixinha com essa diferença e informe o novo valor acima.${usdCashBRL > 0 ? ' Enquanto isso, o internacional deste mês usa só o dólar que já está na corretora.' : ''}`);
-  if (excluded.frozen.length) warnings.push(`${excluded.frozen.join(', ')}: congelado por você. Continua na carteira e no balanço, mas não recebe aporte (descongele em Minha carteira se mudar de ideia).`);
+  if (frozenBack.length) warnings.push(`${frozenBack.join(', ')} voltou ao relatório deste mês: saiu do congelado e segue as regras normais de compra.`);
   if (excluded.ceiling.length) warnings.push(`Não comprei ${excluded.ceiling.join(', ')}: a casa recomenda compra, mas o preço atual já passou do preço teto. Esperar o preço voltar.`);
   for (const x of excluded.ai) warnings.push(`Não comprei ${x.ticker}: a casa recomenda compra, mas a pesquisa da IA discordou${x.why ? ` — "${x.why.slice(0, 180)}${x.why.length > 180 ? '…' : ''}"` : '.'} (desligue "Não aportar onde a IA discorda" para incluir).`);
   if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
