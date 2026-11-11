@@ -1,7 +1,7 @@
 // Casos de uso do app. A interface (app.js) só fala com este módulo.
 // O cliente do Gemini é passado de fora (createGemini), o que permite testar com um fake.
 
-import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber } from './report.js';
+import { normalizeReport, reportId, TYPE_IDS, normalizeTicker, parseNumber, findAssets, validMonth } from './report.js';
 import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, manualExtractionPrompt, analysisPrompt, manualAnalysisPrompt, structurePrompt, normalizeAnalysis, aporteReviewPrompt } from './prompts.js';
 import { parseJsonLoose } from './gemini.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
@@ -55,16 +55,32 @@ export function createService(store) {
     async extractReport(gemini, { images, type, month, filename, signal, onStatus, pagesTotal }) {
       const partial = pagesTotal && images.length < pagesTotal;
       const t0 = Date.now();
-      const res = await gemini.generate({
-        parts: [{ text: extractionPrompt(type, { withThesis: !partial }) }, ...images.flatMap((img, i) => [{ text: `Página ${i + 1}` }, { inlineData: img }])],
+      const ask = async (from, to, withThesis) => (await gemini.generate({
+        parts: [{ text: extractionPrompt(type, { withThesis }) }, ...images.slice(from, to).flatMap((img, i) => [{ text: `Página ${from + i + 1}` }, { inlineData: img }])],
         schema: EXTRACTION_SCHEMA,
         temperature: 0,
         fast: true,
         parallel: true,
         signal,
         onRetry: onStatus,
-      });
-      const normalized = normalizeReport(res.json(), { type, month });
+      })).json();
+      // O painel do Claude aceita um número limitado de imagens por pedido: PDF maior vai em partes.
+      const max = (await gemini.maxImages?.().catch(() => 0)) || images.length;
+      let raw = await ask(0, Math.min(max, images.length), !partial && images.length <= max);
+      // Sem ativos (a tabela ficou depois do limite, ou a IA não a achou): procura a tabela em blocos.
+      if (!findAssets(raw).length && images.length > 1) {
+        const step = Math.max(1, Math.min(max, 8));
+        for (let from = 0; from < images.length && !findAssets(raw).length; from += step) {
+          onStatus?.(`procurando a tabela nas páginas ${from + 1} a ${Math.min(from + step, images.length)}…`);
+          const part = await ask(from, Math.min(from + step, images.length), false);
+          const found = findAssets(part);
+          if (found.length) raw = { ...part, ...raw, assets: found, tablePages: part.tablePages, summary: raw.summary || part.summary };
+        }
+      }
+      // Vale o mês escrito na capa: a casa às vezes publica o arquivo com o nome do mês anterior.
+      const fromCover = validMonth(raw.referenceMonth);
+      const monthChanged = fromCover && fromCover !== month ? { from: month, to: fromCover } : null;
+      const normalized = normalizeReport(raw, { type, month: fromCover ?? month });
       normalized.extraction = {
         model: gemini.model, seconds: Math.round((Date.now() - t0) / 1000),
         pagesSent: images.length, pagesTotal: pagesTotal ?? images.length, at: new Date().toISOString(),
@@ -72,7 +88,7 @@ export function createService(store) {
       const saved = saveReport(normalized, { filename });
       const wanted = [...new Set([...normalized.tablePages, ...normalized.assets.map((a) => a.page)].filter((n) => n && n <= images.length))].slice(0, 2);
       store.savePages(saved.id, wanted.map((n) => ({ page: n, mimeType: images[n - 1].mimeType, data: images[n - 1].data })));
-      return { ...saved, report: normalized };
+      return { ...saved, report: normalized, monthChanged };
     },
     tablePages: (id) => store.pages(id),
 

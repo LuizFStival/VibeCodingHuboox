@@ -1255,11 +1255,17 @@ function openUpload(files) {
     const isJson = /\.json$/i.test(file.name) || file.type === 'application/json';
     return { file, isJson, type: detectType(file.name) ?? 'acoes', month: detectMonth(file.name) ?? new Date().toISOString().slice(0, 7) };
   });
+  // Arquivos do mesmo lote com meses diferentes: quase sempre é a casa que esqueceu de trocar o nome.
+  // Sugere o mês mais novo para todos (e, de qualquer jeito, na leitura vale o mês escrito na capa).
+  const pdfMonths = pending.filter((p) => !p.isJson).map((p) => p.month);
+  const newest = pdfMonths.sort().at(-1);
+  for (const p of pending) if (!p.isJson && p.month < newest) { p.fileMonth = p.month; p.month = newest; }
   const list = $('#uploadList');
   list.replaceChildren(...pending.map((p) => h('div', { class: 'upload-item' },
     h('span', { title: p.file.name }, `${p.isJson ? '🧾' : '📄'} ${p.file.name} (${(p.file.size / 1e6).toFixed(1)} MB)`),
     p.isJson ? h('span', { class: 'muted small' }, 'tipo e mês no JSON') : h('select', { 'aria-label': 'Tipo', onchange: (e) => { p.type = e.target.value; } }, TYPE_IDS.map((t) => h('option', { value: t, selected: p.type === t }, ASSET_TYPES[t].label))),
-    p.isJson ? h('span') : h('input', { type: 'month', value: p.month, 'aria-label': 'Mês', onchange: (e) => { p.month = e.target.value; } }))));
+    p.isJson ? h('span') : h('input', { type: 'month', value: p.month, 'aria-label': 'Mês', onchange: (e) => { p.month = e.target.value; } }),
+    p.fileMonth ? h('span', { class: 'muted small', style: { 'flex-basis': '100%' } }, `O nome diz ${monthLong(p.fileMonth)}, mas os outros arquivos são de ${monthLong(p.month)}: usei ${monthLong(p.month)}. Na leitura vale o mês escrito na capa.`) : null)));
   const needsKey = pending.some((p) => !p.isJson) && !hasKey();
   $('#uploadKeyNotice').hidden = !needsKey;
   $('#uploadConfirm').textContent = pending.every((p) => p.isJson) ? 'Importar' : 'Ler com IA';
@@ -1305,8 +1311,9 @@ $('#uploadDialog').addEventListener('close', async () => {
         res = await read(undefined);
       }
       const bad = checkReport(res.report).filter((c) => !c.ok).length;
-      j.done(`${label}: ${res.report.assets.length} ativos em ${Math.round((Date.now() - t0) / 1000)} s${bad ? ` · ${bad} ponto(s) para conferir` : ' · conferência ok'}${res.replaced ? ' (substituiu o anterior)' : ''}.`);
-      lastMonth = p.month; lastType = p.type;
+      const moved = res.monthChanged ? ` · a capa é de ${monthLong(res.monthChanged.to)} (o arquivo dizia ${monthLong(res.monthChanged.from)}): salvei em ${monthLong(res.monthChanged.to)}` : '';
+      j.done(`${ASSET_TYPES[p.type].label} · ${monthLong(res.report.month)}: ${res.report.assets.length} ativos em ${Math.round((Date.now() - t0) / 1000)} s${bad ? ` · ${bad} ponto(s) para conferir` : ' · conferência ok'}${res.replaced ? ' (substituiu o anterior)' : ''}${moved}.`);
+      lastMonth = res.report.month; lastType = p.type;
     } catch (e) {
       j.fail(`${label}: ${e.message}${e.raw && e.raw !== e.message ? ` — resposta do Google: ${e.raw.slice(0, 300)}` : ''}`);
     }

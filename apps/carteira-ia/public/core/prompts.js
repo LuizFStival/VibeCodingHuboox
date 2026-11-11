@@ -12,6 +12,7 @@ const S = (type, extra = {}) => ({ type, ...extra });
 export const EXTRACTION_SCHEMA = S('OBJECT', {
   properties: {
     provider: S('STRING', { description: 'Casa de análise / nome da carteira (ex.: Orion)' }),
+    referenceMonth: S('STRING', { description: 'Mês de referência escrito na capa ou no título, no formato AAAA-MM (ex.: "Atualização de Novembro" de 2026 → 2026-11). Vazio se não aparecer.' }),
     title: S('STRING'),
     summary: S('STRING', { description: 'Resumo em 3 a 6 frases do contexto e da mensagem principal do mês, em português' }),
     macroHighlights: S('ARRAY', { items: S('STRING'), description: 'Indicadores e fatos macro citados (Selic, IPCA, Fed, câmbio, eleição...)' }),
@@ -70,6 +71,7 @@ export function extractionPrompt(type, { withThesis = true } = {}) {
       : '- Deixe "thesis" vazio (estas são só as primeiras páginas) e seja direto: o resumo do mês em até 5 frases.',
     '- Ignore marcas d\'água e qualquer dado pessoal (nome, e-mail, CPF de assinante). Nunca os reproduza.',
     '- Cada imagem vem depois de um rótulo "Página N". Informe em "page" a página onde achou cada ativo e em "tablePages" as páginas da tabela.',
+    '- Em "referenceMonth", o mês escrito na capa/título (ex.: "Atualização de Novembro" → AAAA-11), não o nome do arquivo.',
     '- Não invente valores: se não estiver no relatório, use null. Copie os números exatamente como estão na tabela.',
   ].join('\n');
 }

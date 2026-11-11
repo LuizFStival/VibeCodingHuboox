@@ -4,7 +4,7 @@ O roteiro para fazer o aporte quando chegam as carteiras novas. Leva uns 20 minu
 
 ## Antes de começar
 
-- Tenha os 3 PDFs do mês (Ações, FIIs e Internacional), com o nome original (ex.: `Carteira_Fiis_-_Novembro26.pdf`). O app tira o tipo e o mês do nome.
+- Tenha os 3 PDFs do mês (Ações, FIIs e Internacional), com o nome original (ex.: `Carteira_Fiis_-_Novembro26.pdf`). O app tira o tipo do nome e confere o mês na capa: se a casa publicar o arquivo com o nome do mês anterior (ex.: `Outubro26` com a capa de novembro), vale a capa.
 - Veja quanto tem de dólar parado na corretora no exterior e, se usar, quanto tem na caixinha do dólar.
 
 ## 1. Subir os PDFs

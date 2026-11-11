@@ -673,3 +673,35 @@ test('congelar: posição antiga fica sem aporte; se voltar ao relatório, volta
   assert.ok(dez.warnings.some((w) => /CPTS11 voltou ao relatório/.test(w)));
   assert.ok(svc.compare('2026-12').alerts.some((a) => a.kind === 'voltou'));
 });
+
+test('leitura do PDF: mês da capa vence o nome do arquivo e a tabela é achada além do limite de imagens', async () => {
+  const svc = createService(createStore(memoryStorage()));
+  const calls = [];
+  // IA falsa: aceita 4 imagens por pedido; a tabela está na página 6; a capa (página 1) diz novembro.
+  const ai = {
+    model: 'fake',
+    maxImages: async () => 4,
+    async generate({ parts }) {
+      const pages = parts.filter((p) => /^Página \d+$/.test(p.text ?? '')).map((p) => Number(p.text.slice(7)));
+      calls.push(pages);
+      const json = { referenceMonth: pages.includes(1) ? '2026-11' : '', summary: pages.includes(1) ? 'resumo de novembro' : '', assets: [] };
+      if (pages.includes(6)) { json.assets = [{ ticker: 'MXRF11', allocationPct: 100, recommendation: 'COMPRAR', price: 8.75, ceilingPrice: 9.26, page: 6 }]; json.tablePages = [6]; }
+      return { json: () => json };
+    },
+  };
+  const images = Array.from({ length: 10 }, () => ({ mimeType: 'image/jpeg', data: 'AA==' }));
+  const res = await svc.extractReport(ai, { images, pagesTotal: 10, type: 'fiis', month: '2026-10', filename: 'Carteira_Fiis_-_Outubro26.pdf' });
+  assert.equal(res.report.month, '2026-11');
+  assert.deepEqual(res.monthChanged, { from: '2026-10', to: '2026-11' });
+  assert.equal(res.report.assets[0].ticker, 'MXRF11');
+  assert.equal(res.report.summary, 'resumo de novembro');
+  assert.ok(calls.every((c) => c.length <= 4), 'nunca manda mais imagens do que o limite');
+  assert.deepEqual(calls[0], [1, 2, 3, 4]);
+  assert.ok(calls.some((c) => c.includes(6)), 'procurou a tabela nas páginas seguintes');
+  assert.deepEqual(svc.months(), ['2026-11'], 'salvou em novembro, não em outubro');
+});
+
+test('ativos aninhados no JSON da IA também são lidos', () => {
+  const r = normalizeReport({ carteira: { ativos: [{ ticker: 'VOO', allocationPct: 100, recommendation: 'COMPRAR' }] } }, { type: 'internacional', month: '2026-11' });
+  assert.equal(r.assets[0].ticker, 'VOO');
+});

@@ -67,6 +67,20 @@ export function normalizeTicker(t) {
   return text(t, 20).toUpperCase().replace(/^(US|NYSE|NASDAQ|BVMF|B3)[:\s]+/, '').replace(/\s+/g, '');
 }
 
+/** Lista de ativos do JSON da IA: `assets`, ou a primeira lista de objetos com "ticker" (às vezes vem aninhada). */
+export function findAssets(raw, depth = 0) {
+  if (Array.isArray(raw?.assets) && raw.assets.length) return raw.assets;
+  if (!raw || typeof raw !== 'object' || depth > 3) return [];
+  for (const v of Object.values(raw)) {
+    if (Array.isArray(v) && v.length && v.every((x) => x && typeof x === 'object' && 'ticker' in x)) return v;
+    if (v && typeof v === 'object' && !Array.isArray(v)) { const got = findAssets(v, depth + 1); if (got.length) return got; }
+  }
+  return [];
+}
+
+/** "2026-11" se o texto for um mês válido; senão null. */
+export const validMonth = (m) => (/^20\d\d-(0[1-9]|1[0-2])$/.test(String(m ?? '').trim()) ? String(m).trim() : null);
+
 /**
  * Normaliza o JSON extraído (formato de prompts.js → EXTRACTION_SCHEMA) e valida.
  * Lança erro com mensagem amigável se não houver ativos.
@@ -80,7 +94,7 @@ export function normalizeReport(raw, { type, month } = {}) {
 
   const seen = new Set();
   const assets = [];
-  for (const a of list(raw.assets)) {
+  for (const a of findAssets(raw)) {
     const ticker = normalizeTicker(a?.ticker);
     if (!ticker || seen.has(ticker)) continue;
     seen.add(ticker);

@@ -44,17 +44,21 @@ export function createClaudeAI(sample) {
     if (search) throw new ClaudeAIError('O Claude do painel não pesquisa na web.', { searchUnsupported: true });
     const texts = [];
     const images = [];
+    let firstPage = null; // rótulo "Página N" da 1ª imagem (lendo o PDF em partes, nem sempre é 1)
     for (const p of parts) {
+      const label = p.text?.match(/^Página (\d+)$/);
       if (p.inlineData) images.push(base64ToBlob(p.inlineData.data, p.inlineData.mimeType));
-      else if (p.text && !/^Página \d+$/.test(p.text)) texts.push(p.text);
+      else if (label) firstPage ??= Number(label[1]);
+      else if (p.text) texts.push(p.text);
     }
+    firstPage ??= 1;
     let prompt = texts.join('\n\n');
     let sent = images;
     if (images.length) {
       const max = (await sample.limits().catch(() => null))?.images?.maxCount ?? 0;
       if (!max) throw new ClaudeAIError(MESSAGES.images_unavailable, { status: 401 });
       sent = images.slice(0, max);
-      prompt += `\n\nAs ${sent.length} imagens anexadas são as páginas do PDF, em ordem: a 1ª imagem é a "Página 1", a 2ª é a "Página 2", e assim por diante.`;
+      prompt += `\n\nAs ${sent.length} imagens anexadas são páginas do PDF, em ordem: a 1ª imagem é a "Página ${firstPage}", a 2ª é a "Página ${firstPage + 1}", e assim por diante.`;
     }
     if (schema) prompt += `\n\nResponda SOMENTE com um JSON válido (sem texto fora dele), neste formato:\n${JSON.stringify(exampleFromSchema(schema))}`;
     try {
@@ -70,5 +74,7 @@ export function createClaudeAI(sample) {
       throw new ClaudeAIError(msg, { status: ['not_granted', 'sampling_disabled', 'session_expired'].includes(e?.code) ? 401 : 0, daily: e?.code === 'rate_limited', raw: e?.message ?? '' });
     }
   }
-  return { model: 'Claude', generate, listModels: async () => [] };
+  /** Quantas imagens cabem num pedido (o app lê PDFs maiores em partes). */
+  const maxImages = async () => (await sample.limits().catch(() => null))?.images?.maxCount ?? 0;
+  return { model: 'Claude', generate, maxImages, listModels: async () => [] };
 }
