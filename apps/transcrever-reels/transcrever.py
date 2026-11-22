@@ -111,9 +111,18 @@ def main():
         try:
             wav = tmp / "audio.wav"
             extrair_audio(ffmpeg, video, wav)
-            segmentos, info = model.transcribe(ler_wav(wav), language="pt", beam_size=5, vad_filter=True)
+            audio = ler_wav(wav)
+            segmentos, info = model.transcribe(audio, language="pt", beam_size=5, vad_filter=True)
             segmentos = list(segmentos)
-            texto = " ".join(s.text.strip() for s in segmentos).strip() or "(nenhuma fala detectada)"
+            texto = " ".join(s.text.strip() for s in segmentos).strip()
+            # As vezes o whisper devolve tudo sem pontuacao; refaz com um prompt pontuado
+            palavras = len(texto.split())
+            if palavras > 30 and sum(texto.count(c) for c in ".,?!") < palavras / 40:
+                segmentos, info = model.transcribe(audio, language="pt", beam_size=5, vad_filter=True,
+                    initial_prompt="Olá, tudo bem? Hoje vamos falar sobre isso, com pontuação correta.")
+                segmentos = list(segmentos)
+                texto = " ".join(s.text.strip() for s in segmentos).strip()
+            texto = texto or "(nenhuma fala detectada)"
             dur = fmt_tempo(info.duration)
 
             stem = video.stem
