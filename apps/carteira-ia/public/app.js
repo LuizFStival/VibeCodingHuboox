@@ -17,6 +17,7 @@ import { createClaudeAI } from './core/claude-ai.js';
 import { createDbStorage } from './core/db-storage.js';
 import { GROUPS } from './core/ranking.js';
 import { makeLock, checkPassword, maskMoney, MASK, MIN_PASSWORD } from './core/lock.js';
+import { sectorOf, isDiversified } from './core/sectors.js';
 
 // store/svc são criados no boot(): no painel, depois de carregar o banco do Claude.
 let store;
@@ -944,6 +945,7 @@ function renderAporte() {
 
   const notices = plan.warnings.length || plan.sellAlerts.length || plan.excludedItems?.length ? h('div', { class: 'notice' },
     h('b', {}, 'Como cheguei nessa proposta'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`))),
+    onlyOwnedNote(plan),
     excludedDetails(plan.excludedItems ?? [])) : null;
 
   const classes = card('Classes: antes → depois', h('span', { class: 'muted small' }, 'traço = alvo'),
@@ -1017,19 +1019,71 @@ function whyDetails(why) {
     h('summary', {}, 'por quê'),
     h('div', {}, h('b', {}, 'Peso: '), why.peso),
     h('div', {}, h('b', {}, 'Diversificação: '), why.setor),
+    why.alternativa ? h('div', {}, h('b', {}, 'Por que não reforçar o que você já tem: '), why.alternativa) : null,
     h('div', {}, h('b', {}, 'Fundamento: '), why.fundamento),
     h('div', {}, h('b', {}, 'Principal risco: '), why.risco));
 }
-/** Limites de concentração (% da classe), configuráveis. */
+/** "Abrir posição nova compensa?": a melhor proposta só reforçando o que você já tem, para comparar. */
+function onlyOwnedNote(plan) {
+  const o = plan.onlyOwned;
+  if (!o) return null;
+  const novos = plan.lines.filter((l) => !l.ownedQty).map((l) => l.ticker);
+  return h('p', { style: { 'margin-top': '8px' } }, h('b', {}, 'Novo × reforço: '),
+    o.buys.length
+      ? `só reforçando o que você já tem, a melhor proposta seria ${o.buys.map((b) => `${b.ticker} ${qtyFmt(b.qty)}`).join(', ')} (${brl(o.invested, 0)}, sobrando ${brl(o.leftover, 0)}). `
+      : `só reforçando o que você já tem, nada caberia nos limites (sobrariam ${brl(o.leftover, 0)}). `,
+    `Abrir ${novos.join(' e ')} ${o.better ? 'deixa a carteira melhor: mais perto das metas, com ativos de nota maior e dentro dos limites' : 'empata com só reforçar'}. Para não abrir nada, ponha 0 em "ativos novos por aporte".`);
+}
+
+const LIMIT_PRESETS = [
+  ['Mais diversificado', { acoes: 0.10, fiis: 0.10, internacional: 0.15, etfAmplo: 0.30, setor: 0.15 }],
+  ['Equilibrado (padrão)', { acoes: 0.15, fiis: 0.12, internacional: 0.20, etfAmplo: 0.40, setor: 0.20 }],
+  ['Mais concentrado', { acoes: 0.20, fiis: 0.15, internacional: 0.25, etfAmplo: 0.50, setor: 0.30 }],
+];
+/** Quanto pesa hoje o maior ativo de cada tipo e o maior setor de cada classe (para comparar com o limite). */
+function currentConcentration() {
+  const cmp = svc.compare(state.month);
+  const reports = svc.reportsFor(state.month);
+  const segOf = (r) => reports.find((rep) => rep.type === r.type)?.assets.find((a) => a.ticker === r.ticker)?.segment || r.segment;
+  const out = {};
+  const sectors = [];
+  for (const c of cmp.classes) {
+    if (!c.value) continue;
+    const bySector = new Map();
+    for (const r of cmp.rows.filter((x) => x.type === c.type)) {
+      const sec = sectorOf(r.ticker, segOf(r), svc.settings().sectorOverrides ?? {});
+      const key = isDiversified(sec) ? 'etfAmplo' : c.type;
+      const w = r.value / c.value;
+      if (!out[key] || w > out[key].w) out[key] = { w, t: r.ticker };
+      if (!isDiversified(sec)) bySector.set(sec, (bySector.get(sec) ?? 0) + w);
+    }
+    for (const [sec, w] of bySector) sectors.push({ w, t: `${sec} (${ASSET_TYPES[c.type].short})` });
+  }
+  out.setor = sectors.sort((a, b) => b.w - a.w)[0];
+  return out;
+}
+/** Limites de diversificação: perfis prontos + campos com o que você tem hoje ao lado. */
 function limitsRow(s) {
   const L = { acoes: 0.15, fiis: 0.12, internacional: 0.2, etfAmplo: 0.4, setor: 0.2, ...(s.limits ?? {}) };
-  const field = (key, label) => h('label', { class: 'check' }, label, h('input', {
-    type: 'number', min: 1, max: 100, step: 1, value: String(Math.round(L[key] * 100)), style: { width: '60px' },
-    onchange: (e) => { const v = Math.min(100, Math.max(1, Number(e.target.value) || 0)) / 100; svc.updateSettings({ limits: { ...L, [key]: v } }); render(); },
-  }), '%');
-  return h('div', { class: 'row', style: { 'margin-top': '8px' } },
-    h('span', { class: 'muted small' }, 'Limites por classe (o ativo já acima é mantido, só não recebe mais):'),
-    field('acoes', 'Ação'), field('fiis', 'FII'), field('internacional', 'Internacional'), field('etfAmplo', 'ETF amplo'), field('setor', 'Setor'));
+  const now = state.month ? currentConcentration() : {};
+  const same = (a, b) => Object.keys(b).every((k) => Math.abs((a[k] ?? 0) - b[k]) < 0.001);
+  const field = (key, label, example) => h('label', { class: 'field' }, label,
+    h('span', { class: 'row', style: { gap: '6px', 'align-items': 'center' } },
+      h('input', { type: 'number', min: 1, max: 100, step: 1, value: String(Math.round(L[key] * 100)), style: { width: '70px' },
+        onchange: (e) => { const v = Math.min(100, Math.max(1, Number(e.target.value) || 0)) / 100; svc.updateSettings({ limits: { ...L, [key]: v } }); render(); } }), '%'),
+    h('span', { class: 'muted small' }, now[key] ? `hoje: ${now[key].t} ${pct(now[key].w, 0)}${now[key].w > L[key] + 0.001 ? ' (acima: não recebe mais)' : ''}` : example));
+  return h('div', { style: { 'margin-top': '14px', 'padding-top': '12px', 'border-top': '1px solid var(--border)' } },
+    h('b', {}, 'Diversificação: o máximo que um único ativo ou setor pode pesar dentro da classe'),
+    h('div', { class: 'row', style: { margin: '8px 0' } }, LIMIT_PRESETS.map(([label, v]) => h('button', {
+      class: `btn small${same(L, v) ? ' primary' : ''}`, type: 'button', onclick: () => { svc.updateSettings({ limits: { ...v } }); render(); },
+    }, `${label} · ${Math.round(v.acoes * 100)}/${Math.round(v.fiis * 100)}/${Math.round(v.setor * 100)}`))),
+    h('div', { class: 'form-grid', style: { 'align-items': 'start' } },
+      field('acoes', 'Por ação', 'ex.: PETR4 dentro das ações'),
+      field('fiis', 'Por FII', 'ex.: HGLG11 dentro dos FIIs'),
+      field('internacional', 'Por ativo internacional', 'ex.: STAG dentro do internacional'),
+      field('etfAmplo', 'Por ETF amplo', 'DIVO11, VOO, EEM: já são uma cesta de ações'),
+      field('setor', 'Por setor', 'soma do mesmo setor (petróleo, bancos, papel…)')),
+    h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, 'Como escolher: 100 ÷ limite ≈ quantos ativos a classe precisa ter, no mínimo, para caber tudo (15% → 7 ações; 12% → 8 FIIs). Limite menor espalha mais o risco; maior deixa concentrar nos melhores. Quem já passou do limite não é vendido: só para de receber aporte até o peso cair.'));
 }
 
 /**

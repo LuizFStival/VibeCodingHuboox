@@ -864,3 +864,16 @@ test('pesquisa estruturada: qualidade, dividendo e risco viram números na nota'
   const bad = scoreAsset(asset, { ...it, searched: true });
   assert.ok(good.score > bad.score + 10 && bad.dividendRisk && !good.dividendRisk);
 });
+
+test('novo × reforço: mostra a alternativa só com o que já tem e explica o ativo novo do mesmo setor', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const plan = planAporte({ amount: 450, holdings, reports, analyses, settings });
+  const novos = plan.lines.filter((l) => !l.ownedQty);
+  if (!novos.length) return; // nada novo: nada a comparar
+  assert.ok(plan.onlyOwned, 'compara com a proposta só de reforço');
+  assert.ok(plan.onlyOwned.invested <= 450 && plan.onlyOwned.buys.every((b) => holdings.some((h) => h.ticker === b.ticker)));
+  const prio = plan.lines.find((l) => l.ticker === 'PRIO3');
+  if (prio) assert.match(prio.why.alternativa, /PETR4 \(que você já tem, mesmo setor\)/);
+  const zero = planAporte({ amount: 450, holdings, reports, analyses, settings: { ...settings, maxNew: 0 } });
+  assert.equal(zero.onlyOwned, null);
+});

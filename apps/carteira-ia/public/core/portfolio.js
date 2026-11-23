@@ -298,12 +298,34 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   }
   const maxNew = settings.maxNew === undefined ? 2 : Number(settings.maxNew);
   const maxOrders = Number(settings.maxOrders) || 0;
-  const opt = optimizeBuys({
+  const optInput = {
     candidates, classes: optClasses,
     pools: split ? { brl: brlForBR, usd: usdPool } : { brl: amount, usd: 0 },
     totalBefore: totalBefore + (intlItem ? intlShare : 0),
     opts: { maxNew, maxOrders, preferOwned: settings.preferOwned, sectorLimit: lim.setor },
-  });
+  };
+  const opt = optimizeBuys(optInput);
+  // Abrir posição nova compensa? Compara com a melhor proposta só reforçando o que você já tem.
+  let onlyOwned = null;
+  if (maxNew !== 0 && candidates.some((c) => opt.qty.get(c.ticker) && !c.owned)) {
+    const alt = optimizeBuys({ ...optInput, opts: { ...optInput.opts, maxNew: 0 } });
+    const buys = candidates.filter((c) => alt.qty.get(c.ticker)).map((c) => ({ ticker: c.ticker, qty: alt.qty.get(c.ticker), amount: alt.qty.get(c.ticker) * c.unitBRL }));
+    const inv = buys.reduce((s2, b) => s2 + b.amount, 0);
+    onlyOwned = { buys, invested: inv, leftover: Math.max(0, amount - inv), better: opt.score > alt.score + 1e-9 };
+  }
+
+  // Posição nova num setor onde você já tem ativo: por que ela e não reforçar o que já tem?
+  const sameSectorNote = (c) => {
+    const mates = cmp.rows.filter((r) => r.type === c.type && r.ticker !== c.ticker && r.value > 0 && sectorOfRow(r) === c.sector);
+    if (!mates.length || c.diversified) return '';
+    return mates.map((r) => {
+      const other = candidates.find((o) => o.ticker === r.ticker);
+      if (!other) return `${r.ticker} (que você já tem, mesmo setor) não está liberado para compra este mês`;
+      const bought = opt.qty.get(r.ticker);
+      const flag = other.sc.flags?.[0]?.label;
+      return `${r.ticker} (que você já tem, mesmo setor) teve nota ${other.score} contra ${c.score}${other.an?.verdict === 'PARCIAL' ? ', com a IA concordando só em parte' : ''}${flag ? ` e alerta de ${flag}` : ''}${bought ? '; também recebe parte do aporte' : ''}`;
+    }).join(' · ') + `. Juntos, o setor fica dentro do limite de ${pctBR(lim.setor, 0)} da classe.`;
+  };
 
   // Linhas da proposta, com o porquê de cada compra.
   const lines = [];
@@ -333,6 +355,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       peso: `${pctTxt(wBefore, 1)} → ${pctTxt(wAfter, 1)} da classe (limite ${pctTxt(c.limit)})`,
       setor: c.diversified ? 'ETF amplo: já diversificado' : `${c.sector}: ${pctTxt(sBefore)} → ${pctTxt(sAfter)} da classe (limite ${pctTxt(lim.setor)})`,
       fundamento: firstSentence(c.an?.fundamentals?.[0] || c.an?.summary) || '—',
+      alternativa: c.owned ? '' : sameSectorNote(c),
       risco: c.sc.flags?.[0]?.label ? `${c.sc.flags[0].label}${c.an?.risks?.[0] ? ` — ${firstSentence(c.an.risks[0])}` : ''}` : (firstSentence(c.an?.risks?.[0]) || 'nenhum risco relevante apontado'),
     };
     lines.push({
@@ -393,7 +416,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       ...excluded.noData.map((x) => ({ ticker: x.ticker, category: 'dados', detail: x.why })),
       ...excluded.noPrice.map((t) => ({ ticker: t, category: 'dados', detail: 'sem preço' })),
     ],
-    combosTried: opt.tried, limits: lim,
+    combosTried: opt.tried, limits: lim, onlyOwned,
     investedBefore: cmp.total, reservedBefore: usdCashBRL + reserve,
     attention: excluded.aiWait.map((x) => x.ticker),
     attentionItems: excluded.aiWait,
