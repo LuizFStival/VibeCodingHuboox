@@ -115,9 +115,11 @@ test('aporte: só COMPRAR, cotas inteiras, respeita veredito da IA', () => {
   const acoes = plan.classes.find((c) => c.type === 'acoes');
   assert.ok(Math.abs(acoes.pctAfter - 0.5) < 0.02);
 
+  // sem os filtros, BBBB3 (aguardar) e CCCC3 (IA discorda) viram candidatos (o otimizador decide se compra)
   const loose = planAporte({ amount: 10000, holdings: [], reports: reports(), analyses, settings: { ...settings, respectAi: false, includeAguardar: true, respectCeiling: false } });
-  assert.ok(loose.lines.some((l) => l.ticker === 'BBBB3'));
-  assert.ok(loose.lines.some((l) => l.ticker === 'CCCC3'));
+  const blocked = (p, t) => p.excludedItems.some((x) => x.ticker === t && ['casa', 'ia', 'teto'].includes(x.category));
+  assert.ok(blocked(plan, 'BBBB3') && blocked(plan, 'CCCC3'));
+  assert.ok(!blocked(loose, 'BBBB3') && !blocked(loose, 'CCCC3'));
 });
 
 test('aporte vai para a classe abaixo do alvo', () => {
@@ -169,6 +171,11 @@ test('serviço: extrai com Gemini fake, analisa em lotes, importa carteira e pla
 
   svc.importReportJson(fixture('internacional.json'));
   svc.updateSettings({ targets: { acoes: 0.5, fiis: 0, internacional: 0.5 } });
+  // o internacional não foi pesquisado: com "exigir pesquisa" (padrão) fica de fora, pedindo revisão
+  const strict = svc.plan('2026-10', 3000);
+  assert.ok(strict.excludedItems.some((x) => x.ticker === 'ETFA' && x.category === 'dados'));
+  assert.ok(!strict.lines.some((l) => l.type === 'internacional'));
+  svc.updateSettings({ requireResearch: false });
   const plan = svc.plan('2026-10', 3000);
   assert.ok(plan.lines.length > 0);
   assert.ok(!plan.lines.some((l) => l.ticker === 'DDDD3'));
@@ -424,32 +431,31 @@ test('leitura do PDF pelo chat: pedido pronto e resposta colada', () => {
   assert.throws(() => svc.importManualReport('não li', { type: 'acoes', month: '2026-10' }), /JSON/);
 });
 
-test('aporte: não compra acima do teto e concentra em poucos ativos, com motivo', () => {
+test('aporte: não compra acima do teto, respeita o limite de compras e explica cada uma', () => {
   const r = [normalizeReport({ assets: [
     { ticker: 'AAAA3', allocationPct: 25, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
     { ticker: 'BBBB3', allocationPct: 25, price: 20, ceilingPrice: 18, recommendation: 'COMPRAR' }, // acima do teto
     { ticker: 'CCCC3', allocationPct: 25, price: 5, ceilingPrice: 9, recommendation: 'COMPRAR' },
     { ticker: 'DDDD3', allocationPct: 25, price: 8, ceilingPrice: 9, recommendation: 'COMPRAR' },
   ] }, { type: 'acoes', month: '2026-10' })];
-  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, includeAguardar: false, respectCeiling: true, maxOrders: 2, bySegment: false, maxNew: -1 };
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, includeAguardar: false, respectCeiling: true, maxOrders: 2, maxNew: -1 };
   const plan = planAporte({ amount: 300, holdings: [{ id: '1', ticker: 'AAAA3', type: 'acoes', qty: 10, avgPrice: 10 }], reports: r, settings: st });
   const t = plan.lines.map((l) => l.ticker);
   assert.ok(!t.includes('BBBB3'));
-  assert.equal(t.length, 2);
-  assert.ok(!t.includes('AAAA3'), 'quem já tem mais fica para depois');
-  assert.ok(plan.warnings.some((w) => /BBBB3.*passou do preço teto/.test(w)));
-  assert.ok(plan.warnings.some((w) => /escolhi 2 ativos/.test(w)));
-  assert.match(plan.lines[0].reason, /potencial \+\d+% até o teto/);
-  assert.ok(plan.invested > 280);
+  assert.ok(t.length >= 1 && t.length <= 2, 'no máximo 2 compras');
+  assert.ok(plan.excludedItems.some((x) => x.ticker === 'BBBB3' && x.category === 'teto'));
+  for (const l of plan.lines) { assert.match(l.why.motivo, /até o teto/); assert.match(l.why.peso, /→/); assert.ok(l.why.setor && l.why.fundamento && l.why.risco); }
+  assert.ok(plan.invested > 280 && plan.invested <= 300);
 });
 
 test('veredito da IA sem pesquisa na web não bloqueia o aporte', () => {
   const st = { targets: { acoes: 0.5, fiis: 0, internacional: 0.5 }, usdBrl: 5, respectAi: true, respectCeiling: false, maxOrders: 0, bySegment: false, maxNew: -1 };
   const noWeb = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: false } }, settings: st });
-  assert.ok(noWeb.lines.some((l) => l.ticker === 'CCCC3'));
+  assert.ok(!noWeb.excludedItems.some((x) => x.ticker === 'CCCC3' && x.category === 'ia'));
   assert.ok(noWeb.warnings.some((w) => /sem pesquisa na web.*não bloqueei/.test(w)));
   const web = planAporte({ amount: 5000, holdings: [], reports: reports(), analyses: { CCCC3: { verdict: 'DISCORDA', searched: true } }, settings: st });
   assert.ok(!web.lines.some((l) => l.ticker === 'CCCC3'));
+  assert.ok(web.excludedItems.some((x) => x.ticker === 'CCCC3' && x.category === 'ia'));
 });
 
 test('concentração respeita as classes: cada classe com fatia relevante recebe', () => {
@@ -483,9 +489,12 @@ test('ranking: grupos e nota explicável', () => {
   };
   const rk = buildRanking(r, an);
   const g = Object.fromEntries(rk.map((x) => [x.ticker, x.group]));
-  assert.deepEqual(g, { AAAA3: 'oportunidade', BBBB3: 'potencial', CCCC3: 'aguardar', DDDD3: 'risco' });
+  // BBBB3: a casa diz comprar, mas a IA (com web) diz aguardar → grupo "aguardar" (não entra no aporte)
+  assert.deepEqual(g, { AAAA3: 'oportunidade', BBBB3: 'aguardar', CCCC3: 'aguardar', DDDD3: 'risco' });
   assert.equal(rk[0].ticker, 'AAAA3');
   assert.ok(rk[0].parts.some((p) => /margem até o teto \+30%/.test(p.why)));
+  // a margem até o teto pesa pouco: no máximo +6 pontos
+  assert.ok(rk[0].parts.find((p) => /margem/.test(p.why)).pts <= 6);
   // pesquisa sem web pesa menos
   const web = scoreAsset(r[0].assets[0], { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: true }).score;
   const noWeb = scoreAsset(r[0].assets[0], { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: false }).score;
@@ -523,11 +532,11 @@ test('"aguardar" da pesquisa tira da compra e vai para atenção; aguardar da ca
   const acoes = plan.classes.find((c) => c.type === 'acoes');
   assert.ok(acoes.need > 990 && acoes.targetValue > 990);
   const off = planAporte({ amount: 1000, holdings: [], reports: r, analyses: an, settings: { ...st, respectAiWait: false } });
-  assert.ok(off.lines.some((l) => l.ticker === 'BBBB3'));
+  assert.ok(!off.attention.includes('BBBB3') && !off.excludedItems.some((x) => x.ticker === 'BBBB3' && x.category === 'ia'));
   assert.ok(!off.lines.some((l) => l.ticker === 'CCCC3'), 'aguardar da casa nunca entra, mesmo com a IA dizendo comprar');
 });
 
-test('aporte por segmento: reforça o que já tem, abre no máximo N novos, respeita incluir/tirar', () => {
+test('aporte: limite de novas posições, reforço do que já tem e incluir/tirar', () => {
   const r = [normalizeReport({ assets: [
     { ticker: 'LOGA11', segment: 'Logístico', allocationPct: 20, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
     { ticker: 'LOGB11', segment: 'Logístico', allocationPct: 20, price: 100, ceilingPrice: 130, recommendation: 'COMPRAR' },
@@ -536,17 +545,19 @@ test('aporte por segmento: reforça o que já tem, abre no máximo N novos, resp
     { ticker: 'SHOA11', segment: 'Shopping', allocationPct: 10, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
     { ticker: 'LAJA11', segment: 'Lajes', allocationPct: 10, price: 100, ceilingPrice: 120, recommendation: 'COMPRAR' },
   ] }, { type: 'fiis', month: '2026-10' })];
-  const holdings = [{ id: '1', ticker: 'LOGA11', type: 'fiis', qty: 1, avgPrice: 100 }, { id: '2', ticker: 'PAPX11', type: 'fiis', qty: 10, avgPrice: 10, segment: 'Papel' }];
-  const st = { targets: { acoes: 0, fiis: 1, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0, maxNew: 1 };
-  const plan = planAporte({ amount: 2000, holdings, reports: r, settings: st });
-  const t = plan.lines.map((l) => l.ticker).sort();
-  assert.ok(t.includes('LOGA11'), 'reforça o logístico que já tem');
-  assert.ok(!t.includes('LOGB11'), 'não abre outro logístico');
-  assert.equal(plan.lines.filter((l) => !l.ownedQty).length, 1, 'no máximo 1 novo');
-  assert.ok(plan.lines.every((l) => l.segment), 'cada linha diz o segmento');
-  assert.ok(plan.warnings.some((w) => /no máximo 1 posição/.test(w)));
+  const holdings = [
+    { id: '1', ticker: 'LOGA11', type: 'fiis', qty: 3, avgPrice: 100 }, { id: '2', ticker: 'PAPX11', type: 'fiis', qty: 30, avgPrice: 10, segment: 'Papel' },
+    { id: '3', ticker: 'RUAX11', type: 'fiis', qty: 3, avgPrice: 100, segment: 'Renda Urbana' }, { id: '4', ticker: 'HIBX11', type: 'fiis', qty: 3, avgPrice: 100, segment: 'Híbrido' },
+  ];
+  const st = { targets: { acoes: 0, fiis: 1, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0, maxNew: 1, limits: { fiis: 0.3, setor: 0.4 } };
+  const plan = planAporte({ amount: 400, holdings, reports: r, settings: st });
+  assert.ok(plan.lines.filter((l) => !l.ownedQty).length <= 1, 'no máximo 1 novo');
+  assert.ok(plan.lines.every((l) => l.sector && l.why), 'cada linha diz o setor e o porquê');
+  assert.ok(plan.excludedItems.some((x) => x.category === 'novas') || plan.lines.length <= 2);
+  const zero = planAporte({ amount: 400, holdings, reports: r, settings: { ...st, maxNew: 0 } });
+  assert.ok(zero.lines.every((l) => l.ownedQty > 0), 'sem novos: só reforço');
   // trocar: tirar LOGA11 e incluir LOGB11 (ex.: sugestão da IA)
-  const swap = planAporte({ amount: 2000, holdings, reports: r, settings: { ...st, exclude: ['LOGA11'], include: ['LOGB11'] } });
+  const swap = planAporte({ amount: 400, holdings, reports: r, settings: { ...st, exclude: ['LOGA11'], include: ['LOGB11'] } });
   assert.ok(swap.lines.some((l) => l.ticker === 'LOGB11'));
   assert.ok(!swap.lines.some((l) => l.ticker === 'LOGA11'));
   assert.deepEqual(swap.userExcluded, ['LOGA11']);
@@ -658,7 +669,7 @@ test('congelar: posição antiga fica sem aporte; se voltar ao relatório, volta
   ] });
   fiis('2026-11', false);
   svc.upsertHolding({ ticker: 'CPTS11', type: 'fiis', qty: 30, avgPrice: 7.86, segment: 'Papel' });
-  svc.updateSettings({ targets: { acoes: 0, fiis: 1, internacional: 0 }, maxOrders: 0 });
+  svc.updateSettings({ targets: { acoes: 0, fiis: 1, internacional: 0 }, maxOrders: 0, requireResearch: false, limits: { fiis: 1, setor: 1 } });
   svc.setFrozen('CPTS11', true);
   svc.upsertHolding({ ticker: 'CPTS11', qty: 30, avgPrice: 7.9 }); // editar não descongela
   assert.equal(svc.holdings()[0].frozen, true);
@@ -704,4 +715,152 @@ test('leitura do PDF: mês da capa vence o nome do arquivo e a tabela é achada 
 test('ativos aninhados no JSON da IA também são lidos', () => {
   const r = normalizeReport({ carteira: { ativos: [{ ticker: 'VOO', allocationPct: 100, recommendation: 'COMPRAR' }] } }, { type: 'internacional', month: '2026-11' });
   assert.equal(r.assets[0].ticker, 'VOO');
+});
+
+// ---------------------------------------------------------------- motor de aporte (carteira resultante)
+
+import { sectorOf } from '../public/core/sectors.js';
+import { riskSignals } from '../public/core/ranking.js';
+
+// Cenário parecido com nov/2026: ações com dois ativos pesados (40% cada), Petrobras pequena,
+// PRIO3 e CMIG4 disponíveis; FIIs com Logístico perto do limite de setor. Sem fixar quem vence.
+function novCenario() {
+  const ok = (extra = {}) => ({ verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: true, risks: [], fundamentals: ['lucro crescendo'], news: [], summary: 'ok', ...extra });
+  const acoes = normalizeReport({ assets: [
+    { ticker: 'BBAS3', segment: 'Financeiro', allocationPct: 10, price: 14.2, ceilingPrice: 18, recommendation: 'COMPRAR' },
+    { ticker: 'DIVO11', segment: 'Ibov', allocationPct: 14, price: 118.35, ceilingPrice: 141.84, recommendation: 'COMPRAR' },
+    { ticker: 'PETR4', segment: 'Petróleo e Gás', allocationPct: 12, price: 41.3, ceilingPrice: 57.19, recommendation: 'COMPRAR' },
+    { ticker: 'PRIO3', segment: 'Petrolífero', allocationPct: 5, price: 58.22, ceilingPrice: 67.65, recommendation: 'COMPRAR' },
+    { ticker: 'CMIG4', segment: 'Energia elétrica', allocationPct: 10, price: 10.78, ceilingPrice: 11.75, recommendation: 'COMPRAR' },
+    { ticker: 'VALE3', segment: 'Mineração', allocationPct: 12, price: 58.41, ceilingPrice: 67.64, recommendation: 'COMPRAR' },
+    { ticker: 'ITUB3', segment: 'Financeiro', allocationPct: 12, price: 43.86, ceilingPrice: 40.26, recommendation: 'AGUARDAR' },
+  ] }, { type: 'acoes', month: '2026-11' });
+  const fiis = normalizeReport({ assets: [
+    { ticker: 'BTLG11', segment: 'Logístico', allocationPct: 20, price: 94.26, ceilingPrice: 102, recommendation: 'COMPRAR' },
+    { ticker: 'GGRC11', segment: 'Logístico', allocationPct: 20, price: 8, ceilingPrice: 10.4, recommendation: 'COMPRAR' },
+    { ticker: 'KNRI11', segment: 'Híbrido', allocationPct: 20, price: 140.5, ceilingPrice: 152, recommendation: 'COMPRAR' },
+    { ticker: 'MCCI11', segment: 'Papel', allocationPct: 20, price: 85.99, ceilingPrice: 92, recommendation: 'COMPRAR' },
+    { ticker: 'TRXF11', segment: 'Renda Urbana', allocationPct: 20, price: 52.88, ceilingPrice: 61, recommendation: 'COMPRAR' },
+  ] }, { type: 'fiis', month: '2026-11' });
+  const analyses = {
+    BBAS3: ok({ verdict: 'DISCORDA', aiRec: 'AGUARDAR' }), DIVO11: ok(), PETR4: ok({ verdict: 'PARCIAL' }), PRIO3: ok(), CMIG4: ok({ verdict: 'PARCIAL' }),
+    VALE3: ok({ verdict: 'DISCORDA', aiRec: 'AGUARDAR' }), ITUB3: ok({ aiRec: 'AGUARDAR' }),
+    BTLG11: ok(), GGRC11: ok({ verdict: 'PARCIAL' }), KNRI11: ok(), MCCI11: ok(),
+    TRXF11: ok({ verdict: 'DISCORDA', aiRec: 'AGUARDAR', risks: ['O fundo distribuiu mais do que gerou e usou reservas.'] }),
+  };
+  const h = (ticker, type, qty, segment) => ({ id: ticker, ticker, type, qty, avgPrice: null, segment });
+  const holdings = [
+    h('BBAS3', 'acoes', 25), h('DIVO11', 'acoes', 3), h('VALE3', 'acoes', 2), h('PETR4', 'acoes', 1), h('KEPL3', 'acoes', 4, 'Industrial'),
+    h('BTLG11', 'fiis', 1), h('GGRC11', 'fiis', 12), h('TRXF11', 'fiis', 3), h('XPML11', 'fiis', 3, 'Shopping'), h('RCRB11', 'fiis', 2, 'Lajes'), h('CPTS11', 'fiis', 30, 'Papel'),
+  ].map((x) => ({ ...x, price: { KEPL3: 6.45, XPML11: 83, RCRB11: 126.75, CPTS11: 7.86 }[x.ticker] ?? null }));
+  const settings = { targets: { acoes: 0.35, fiis: 0.45, internacional: 0.2 }, usdBrl: 5, respectAi: true, respectAiWait: true, respectCeiling: true,
+    maxOrders: 5, maxNew: 2, preferOwned: true, limits: { acoes: 0.15, fiis: 0.12, internacional: 0.2, etfAmplo: 0.4, setor: 0.2 } };
+  return { reports: [acoes, fiis], analyses, holdings, settings };
+}
+test('setores padronizados: PETR4 (Petróleo e Gás) e PRIO3 (Petrolífero) são o mesmo risco', () => {
+  assert.equal(sectorOf('PETR4', 'Petróleo e Gás'), sectorOf('PRIO3', 'Petrolífero'));
+  assert.equal(sectorOf('BORR', 'Stock'), 'Petróleo e gás');
+  assert.equal(sectorOf('ITUB3', 'Financeiro'), sectorOf('BBAS3', 'Bancos'));
+  assert.equal(sectorOf('VOO', 'ETF'), sectorOf('DIVO11', 'Ibov'), 'ETFs amplos ficam como diversificados');
+  assert.notEqual(sectorOf('GLD', 'ETF'), sectorOf('CPER', 'ETF'));
+  assert.equal(sectorOf('XYZ', 'ETF'), 'Outros (XYZ)', 'segmento genérico não agrupa ativos diferentes');
+  assert.equal(sectorOf('ABCD3', 'Qualquer', { ABCD3: 'Bancos' }), 'Bancos', 'correção manual por ticker');
+});
+
+test('motor: não passa dos limites de ativo e setor, nem compra AGUARDAR/acima do teto/IA contra', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  for (const maxNew of [0, 2, 5]) {
+    const plan = planAporte({ amount: 450, holdings, reports, analyses, settings: { ...settings, maxNew } });
+    const t = plan.lines.map((l) => l.ticker);
+    for (const bad of ['ITUB3', 'BBAS3', 'VALE3', 'TRXF11']) assert.ok(!t.includes(bad), `${bad} não pode ser comprado`);
+    assert.ok(plan.lines.filter((l) => !l.ownedQty).length <= maxNew, 'limite de novos');
+    assert.ok(plan.lines.length <= 5, 'limite de compras');
+    assert.ok(plan.invested <= 450 + 1e-6, 'orçamento');
+    for (const l of plan.lines) {
+      if (l.type !== 'internacional') assert.equal(l.qty, Math.round(l.qty), 'cotas inteiras');
+      const lim = l.sector.startsWith('Diversificado') ? 0.4 : settings.limits[l.type];
+      assert.ok(l.weightAfter <= Math.max(lim, l.weightBefore) + 1e-9, `${l.ticker}: ${l.weightAfter} > limite`);
+      if (!l.sector.startsWith('Diversificado')) assert.ok(l.sectorAfter <= Math.max(0.2, l.sectorBefore) + 1e-9, `${l.ticker}: setor ${l.sectorAfter}`);
+    }
+    // Petrobras + PRIO juntas no mesmo setor: a soma não passa de 20% da classe
+    const oil = plan.lines.filter((l) => l.sector === 'Petróleo e gás');
+    if (oil.length) assert.ok(Math.max(...oil.map((l) => l.sectorAfter)) <= 0.2 + 1e-9);
+  }
+});
+
+test('motor: reprodutível e porcentagens recalculadas', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const a = planAporte({ amount: 450, holdings, reports, analyses, settings });
+  const b = planAporte({ amount: 450, holdings, reports, analyses, settings });
+  assert.deepEqual(a.lines.map((l) => [l.ticker, l.qty]), b.lines.map((l) => [l.ticker, l.qty]));
+  const sum = a.classes.reduce((s, c) => s + c.pctAfter, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9, `as classes somam 100% depois do aporte (${sum})`);
+  for (const c of a.classes) assert.ok(Math.abs(c.after - (c.before + c.added)) < 1e-6 || c.type === 'internacional');
+});
+
+test('motor: deixa dinheiro parado quando não há combinação adequada', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  // limites apertados: quase nada cabe → sobra em vez de forçar compra
+  const tight = planAporte({ amount: 450, holdings, reports, analyses, settings: { ...settings, maxNew: 0, limits: { acoes: 0.05, fiis: 0.05, internacional: 0.05, etfAmplo: 0.05, setor: 0.05 } } });
+  assert.ok(tight.leftover > 300, `sobra ${tight.leftover}`);
+  assert.ok(tight.warnings.some((w) => /Sobraram/.test(w)));
+  assert.ok(tight.excludedItems.some((x) => ['concentracao', 'setor'].includes(x.category)));
+});
+
+test('IA: PARCIAL+COMPRAR entra com penalidade; PARCIAL sem compra ou AGUARDAR fica de fora; pesquisa velha pede revisão', () => {
+  const a = { ticker: 'AAAA3', rec: 'COMPRAR', price: 10, ceiling: 12, dy: 0.06 };
+  const base = { aiRec: 'COMPRAR', confidence: 'alta', searched: true, risks: [], news: [] };
+  assert.ok(scoreAsset(a, { ...base, verdict: 'PARCIAL' }).score < scoreAsset(a, { ...base, verdict: 'CONCORDA' }).score);
+  const r = [normalizeReport({ assets: [
+    { ticker: 'AAAA3', allocationPct: 34, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+    { ticker: 'BBBB3', allocationPct: 33, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+    { ticker: 'CCCC3', allocationPct: 33, price: 10, ceilingPrice: 12, recommendation: 'COMPRAR' },
+  ] }, { type: 'acoes', month: '2026-11' })];
+  r[0].importedAt = '2026-11-11T00:00:00Z';
+  const an = {
+    AAAA3: { ...base, verdict: 'PARCIAL', analyzedAt: '2026-11-20T00:00:00Z' },
+    BBBB3: { ...base, verdict: 'PARCIAL', aiRec: 'AGUARDAR', analyzedAt: '2026-11-20T00:00:00Z' },
+    CCCC3: { ...base, verdict: 'CONCORDA', analyzedAt: '2026-09-01T00:00:00Z' }, // antes do relatório do mês
+  };
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, respectAi: true, maxOrders: 0, maxNew: -1, requireResearch: true, today: '2026-11-23' };
+  const plan = planAporte({ amount: 300, holdings: [], reports: r, analyses: an, settings: st });
+  assert.deepEqual(plan.lines.map((l) => l.ticker), ['AAAA3']);
+  assert.ok(plan.excludedItems.some((x) => x.ticker === 'BBBB3' && x.category === 'ia'));
+  assert.ok(plan.excludedItems.some((x) => x.ticker === 'CCCC3' && x.category === 'dados' && /antes do relatório/.test(x.detail)));
+});
+
+test('qualidade: dividendo insustentável não conta como positivo; riscos e notícias pesam na nota', () => {
+  const a = { ticker: 'FIIX11', rec: 'COMPRAR', price: 50, ceiling: 70, dy: 0.2 };
+  const base = { verdict: 'CONCORDA', aiRec: 'COMPRAR', confidence: 'alta', searched: true, news: [] };
+  const clean = scoreAsset(a, { ...base, risks: ['vacância baixa'], fundamentals: ['resultado cobre a distribuição'] });
+  const bad = scoreAsset(a, { ...base, risks: ['O fundo distribuiu mais do que gerou e usou reservas.'], fundamentals: ['rendimento com ganho não recorrente de venda de imóvel'] });
+  assert.equal(riskSignals({ risks: ['distribuiu mais do que gerou'] }).dividendRisk, true);
+  assert.ok(bad.dividendRisk && !clean.dividendRisk);
+  assert.ok(!bad.parts.some((p) => /^DY/.test(p.why)), 'DY alto não soma quando o dividendo é duvidoso');
+  assert.ok(clean.score - bad.score >= 10, `${clean.score} vs ${bad.score}`);
+  assert.notEqual(bad.group, 'oportunidade');
+  const neg = scoreAsset(a, { ...base, risks: [], news: [{ title: 'lucro despenca', impact: 'negativo' }, { title: 'rebaixamento', impact: 'negativo' }] });
+  assert.ok(neg.score < clean.score);
+  // alavancagem negativa (caixa líquido) não é sinal de risco
+  assert.equal(riskSignals({ fundamentals: ['alavancagem líquida reportada próxima de -6%'] }).flags.length, 0);
+});
+
+test('motor: explica cada compra e o motivo de quem ficou de fora', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const plan = planAporte({ amount: 450, holdings, reports, analyses, settings });
+  assert.ok(plan.lines.length > 0);
+  for (const l of plan.lines) for (const k of ['motivo', 'peso', 'setor', 'fundamento', 'risco']) assert.ok(l.why[k], `${l.ticker} sem ${k}`);
+  const cats = new Set(plan.excludedItems.map((x) => x.category));
+  assert.ok(cats.has('casa') && cats.has('ia'), [...cats].join(','));
+  assert.ok(plan.excludedItems.every((x) => x.detail));
+});
+
+test('pesquisa estruturada: qualidade, dividendo e risco viram números na nota', () => {
+  const n = normalizeAnalysis({ ativos: [{ ticker: 'AAAA3', veredito: 'CONCORDA', recomendacaoIA: 'COMPRAR', resumo: 'ok', qualidade: 8, sustentabilidadeDividendo: 'insustentável', nivelRisco: 'alto', dataDados: '2026-11-20' }] }, ['AAAA3']);
+  const it = n.items.AAAA3;
+  assert.deepEqual([it.quality, it.dividendQuality, it.riskLevel, it.dataDate], [8, 'insustentavel', 'alto', '2026-11-20']);
+  const asset = { ticker: 'AAAA3', rec: 'COMPRAR', price: 10, ceiling: 12, dy: 0.1 };
+  const good = scoreAsset(asset, { ...it, quality: 9, dividendQuality: 'sustentavel', riskLevel: 'baixo', searched: true });
+  const bad = scoreAsset(asset, { ...it, searched: true });
+  assert.ok(good.score > bad.score + 10 && bad.dividendRisk && !good.dividendRisk);
 });

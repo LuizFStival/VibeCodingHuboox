@@ -15,6 +15,8 @@
 
 import { ASSET_TYPES, TYPE_IDS } from './report.js';
 import { scoreAsset } from './ranking.js';
+import { sectorOf, isDiversified } from './sectors.js';
+import { optimizeBuys } from './optimizer.js';
 
 export const DEFAULT_SETTINGS = {
   targets: { acoes: 0.4, fiis: 0.3, internacional: 0.3 },
@@ -34,6 +36,11 @@ export const DEFAULT_SETTINGS = {
   lock: null,           // senha de acesso: { salt, hash, iterations, hint } (só o hash, nunca a senha)
   autoLockMin: 15,      // bloqueia sozinho depois de N minutos parado (0 = nunca)
   startHidden: false,   // abrir sempre com os valores ocultos
+  // Limites de concentração, em fração da classe (configuráveis). Ativo já acima do limite
+  // é mantido, mas não recebe aporte que aumente o seu peso. Nada é vendido.
+  limits: { acoes: 0.15, fiis: 0.12, internacional: 0.20, etfAmplo: 0.40, setor: 0.20 },
+  requireResearch: true, // sem pesquisa atual da IA (com web), o ativo não entra na proposta
+  sectorOverrides: {},   // correções de setor por ticker, ex.: { "XYZW3": "Bancos" }
 };
 
 /** ticker → { ticker, type, asset, analysis } a partir dos relatórios do mês. */
@@ -58,6 +65,7 @@ export function classifyTicker(ticker, universe = new Map()) {
 export function segmentOfAsset(ticker, report, holdings = []) {
   return report?.assets.find((x) => x.ticker === ticker)?.segment || holdings.find((h) => h.ticker === ticker)?.segment || 'Outros';
 }
+const short = (t, n = 140) => { const s = String(t ?? '').split(/(?<=[.!?])\s/)[0]; return s.length > n ? `${s.slice(0, n - 1)}…` : s; };
 const pctBR = (x, d) => `${(x * 100).toFixed(d).replace('.', ',')}%`;
 const fxFor = (type, settings) => (ASSET_TYPES[type]?.currency === 'USD' ? Number(settings.usdBrl) || 0 : 1);
 
@@ -171,7 +179,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const totalBefore = cmp.total + usdCashBRL + reserve;
   const totalAfter = totalBefore + brl;
 
-  const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [], user: [] };
+  const excluded = { ceiling: [], ai: [], aiWait: [], aiNoWeb: [], noPrice: [], user: [], house: [], noData: [] };
+  const today = settings.today ? new Date(settings.today) : new Date();
+  const reportOf = (t) => reports.find((r) => r.assets.some((a) => a.ticker === t));
   // Congelado = posição antiga, fora do relatório: fica na carteira sem aporte. Se o ativo voltar
   // ao relatório do mês, ele volta a valer normalmente (as regras de compra decidem).
   const frozenBack = holdings.filter((h) => h.frozen && universe.has(h.ticker)).map((h) => h.ticker);
@@ -186,10 +196,19 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     }
     if (a.weight <= 0) return false;
     const recOk = a.rec === 'COMPRAR' || (settings.includeAguardar && (a.rec === 'AGUARDAR' || a.rec === 'MANTER'));
-    if (!recOk) return false;
+    if (!recOk) { if (a.rec !== 'VENDER') excluded.house.push(a.ticker); return false; }
     const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
     if (!price) { excluded.noPrice.push(a.ticker); return false; }
     const an = analyses[a.ticker];
+    // Sem pesquisa atual (com web e depois da leitura do relatório): pede revisão antes de recomendar.
+    if (settings.requireResearch === true) {
+      const rep = reportOf(a.ticker);
+      const at = an?.analyzedAt ? new Date(an.analyzedAt) : null;
+      const why = !an ? 'sem pesquisa da IA' : an.searched === false ? 'pesquisa sem web (sem dados atuais)'
+        : at && rep?.importedAt && at < new Date(rep.importedAt) ? 'pesquisa feita antes do relatório deste mês'
+        : at && (today - at) / 86400000 > 45 ? `pesquisa de ${at.toLocaleDateString('pt-BR')} (mais de 45 dias)` : null;
+      if (why) { excluded.noData.push({ ticker: a.ticker, why }); return false; }
+    }
     if (settings.respectAi && (an?.verdict === 'DISCORDA' || an?.aiRec === 'VENDER')) {
       // Só bloqueia quem foi avaliado com pesquisa na web; sem dados atuais vira só um aviso.
       if (an.searched === false) excluded.aiNoWeb.push(a.ticker);
@@ -199,6 +218,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     // A casa diz comprar, mas a pesquisa (com web) diz aguardar/manter: fica em atenção, sem compra.
     if (settings.respectAiWait !== false && an && an.searched !== false && (an.aiRec === 'AGUARDAR' || an.aiRec === 'MANTER')) {
       excluded.aiWait.push({ ticker: a.ticker, why: an.summary }); return false;
+    }
+    // PARCIAL não quer dizer "comprar": sem recomendação clara da IA, fica em atenção.
+    if (settings.respectAiWait !== false && an && an.searched !== false && an.verdict === 'PARCIAL' && !an.aiRec) {
+      excluded.aiWait.push({ ticker: a.ticker, why: `a IA concorda só em parte e não deu recomendação clara. ${an.summary ?? ''}`.trim() }); return false;
     }
     return true;
   };
@@ -234,157 +257,94 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   amount = brlForBR + usdPool; // tudo o que pode ser investido agora
   const poolOf = (l) => (split && l.type === 'internacional' ? 'usd' : 'brl');
 
-  // 2) dentro de cada classe, por SEGMENTO (logístico, papel, bancos…): o dinheiro vai para os
-  //    segmentos mais abaixo do peso recomendado; dentro do segmento, reforça o que você já tem
-  //    (se estiver liberado para compra) e só abre posição nova se não houver o que reforçar.
-  const lines = [];
+  // 2) escolha das compras olhando a carteira resultante (optimizer.js): metas por classe,
+  //    qualidade e riscos de cada ativo, peso recomendado pela casa e limites de concentração
+  //    por ativo e por setor. Combina até `maxOrders` ativos (no máximo `maxNew` novos).
+  const lim = { ...DEFAULT_SETTINGS.limits, ...(settings.limits ?? {}) };
+  const overrides = settings.sectorOverrides ?? {};
   const holdingValue = new Map(cmp.rows.map((r) => [r.ticker, r.value]));
+  const sectorOfRow = (r) => sectorOf(r.ticker, reports.find((rep) => rep.type === r.type)?.assets.find((a) => a.ticker === r.ticker)?.segment || r.segment, overrides);
+  const optClasses = {};
+  for (const c of cmp.classes) {
+    const assets = new Map(); const sectors = new Map();
+    for (const r of cmp.rows.filter((x) => x.type === c.type)) {
+      assets.set(r.ticker, r.value);
+      const sec = sectorOfRow(r);
+      sectors.set(sec, (sectors.get(sec) ?? 0) + r.value);
+    }
+    const isIntl = c.type === 'internacional';
+    // No internacional, comprar só troca caixa reservado por posição: o peso da classe não muda.
+    optClasses[c.type] = { invested: c.value, reserved: isIntl ? usdCashBRL + reserve + intlShare : 0, fixed: isIntl, target: targets[c.type], assets, sectors };
+  }
+  const candidates = [];
   for (const ci of classItems) {
-    const classAmount = perClass.get(ci.key);
     const weights = classWeights(ci.report);
-    const classAfter = ci.current + classAmount;
-    // bySegment: false trata cada ativo como um segmento próprio (sem agrupar).
-    // No internacional o "segmento" do relatório é o tipo do papel (ETF, REIT, Stock): um ETF de
-    // emergentes, um de títulos curtos e um de ouro são exposições diferentes, então lá cada ativo conta sozinho.
-    const segmentOf = settings.bySegment === false || ci.key === 'internacional' ? (t) => t : (t, rep, hs) => segmentOfAsset(t, rep, hs);
-    const segW = new Map();
-    for (const a of ci.report.assets) if (weights.get(a.ticker)) segW.set(segmentOf(a.ticker, ci.report, holdings), (segW.get(segmentOf(a.ticker, ci.report, holdings)) ?? 0) + weights.get(a.ticker));
-    const segCur = new Map();
-    for (const r of cmp.rows.filter((x) => x.type === ci.key)) segCur.set(segmentOf(r.ticker, ci.report, holdings), (segCur.get(segmentOf(r.ticker, ci.report, holdings)) ?? 0) + r.value);
-    const bySeg = new Map();
-    for (const a of ci.eligible) { const sg = segmentOf(a.ticker, ci.report, holdings); if (!bySeg.has(sg)) bySeg.set(sg, []); bySeg.get(sg).push(a); }
-    const segItems = [...bySeg.keys()].map((sg) => ({ key: sg, current: segCur.get(sg) ?? 0, target: classAfter * (segW.get(sg) ?? 0), weight: segW.get(sg) ?? 0 }));
-    const perSeg = allocate(classAmount, segItems);
     const fx = fxFor(ci.key, settings);
-    const cls = cmp.classes.find((c) => c.type === ci.key);
-    for (const [sg, cands] of bySeg) {
-      const segAmount = perSeg.get(sg) ?? 0;
-      if (segAmount <= 0) continue;
-      const scoreOf = (a) => scoreAsset(a, analyses[a.ticker]).score;
-      const owned = cands.filter((a) => holdingValue.get(a.ticker) > 0);
-      const forced = cands.filter((a) => include.has(a.ticker));
-      // Reforça o que já tem; sem nada para reforçar, abre o melhor novo do segmento.
-      let pick = settings.preferOwned !== false && owned.length ? owned : [...cands].sort((x, y) => scoreOf(y) - scoreOf(x)).slice(0, 1);
-      for (const f of forced) if (!pick.includes(f)) pick = [...pick, f];
-      const items = pick.map((a) => ({ key: a.ticker, current: holdingValue.get(a.ticker) ?? 0, target: classAfter * (weights.get(a.ticker) ?? 0), weight: weights.get(a.ticker) ?? 0 }));
-      const perAsset = allocate(segAmount, items);
-      const segPctMine = cls.value ? (segCur.get(sg) ?? 0) / cls.value : 0;
-      for (const a of pick) {
-        const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
-        const it = items.find((i) => i.key === a.ticker);
-        const mine = cls.value ? it.current / cls.value : 0;
-        const up = a.ceiling && price ? a.ceiling / price - 1 : null;
-        const sc = scoreAsset(a, analyses[a.ticker]);
-        const own = holdings.find((h) => h.ticker === a.ticker);
-        lines.push({
-          score: sc.score, segment: sg, forced: include.has(a.ticker),
-          ownedQty: own?.qty ?? 0, ownedValue: holdingValue.get(a.ticker) ?? 0,
-          ticker: a.ticker, name: a.name, type: ci.key, rec: a.rec, verdict: analyses[a.ticker]?.verdict ?? null,
-          price, currency: ASSET_TYPES[ci.key].currency, unitBRL: price * fx, ideal: perAsset.get(a.ticker),
-          deficit: it.target - it.current, fractional: ci.key === 'internacional' && settings.fractionalIntl,
-          qty: 0, amount: 0,
-          reason: [
-            `nota ${sc.score}`,
-            `${ASSET_TYPES[ci.key].short}: ${pctBR(cls.pct, 0)} do patrimônio, alvo ${pctBR(targets[ci.key], 0)}`,
-            `segmento ${sg}: você ${pctBR(segPctMine, 0)} da classe, recomendado ${pctBR(segW.get(sg) ?? 0, 0)}`,
-            own ? `reforço (você tem ${pctBR(mine, 1)} da classe)` : 'posição nova',
-            up !== null ? `potencial ${up >= 0 ? '+' : ''}${(up * 100).toFixed(0)}% até o teto` : '',
-          ].filter(Boolean).join(' · '),
-        });
-      }
+    for (const a of ci.eligible) {
+      const own = holdings.find((h) => h.ticker === a.ticker);
+      const price = priceOf(a.ticker, universe, own);
+      const an = analyses[a.ticker];
+      const sc = scoreAsset(a, an);
+      const sector = sectorOf(a.ticker, a.segment, overrides);
+      const diversified = isDiversified(sector);
+      candidates.push({
+        ticker: a.ticker, type: ci.key, sector, diversified, limit: diversified ? lim.etfAmplo : lim[ci.key] ?? 0.15,
+        unitBRL: price * fx, fractional: ci.key === 'internacional' && Boolean(settings.fractionalIntl),
+        current: holdingValue.get(a.ticker) ?? 0, owned: (holdingValue.get(a.ticker) ?? 0) > 0, forced: include.has(a.ticker),
+        q: Math.max(-1, Math.min(1, (sc.score - 55) / 40)), score: sc.score, houseW: weights.get(a.ticker) ?? 0,
+        pool: poolOf({ type: ci.key }), asset: a, sc, price, an, own,
+      });
     }
   }
-
-  // 2a) no máximo N posições novas por aporte (não inflar a carteira): as novas de menor nota
-  //     saem e o dinheiro delas vai para as outras compras da mesma classe.
   const maxNew = settings.maxNew === undefined ? 2 : Number(settings.maxNew);
-  const news = lines.filter((l) => !l.ownedQty && !l.forced).sort((a, b) => b.score - a.score);
-  if (maxNew >= 0 && news.length > maxNew) {
-    const out = news.slice(maxNew);
-    for (const l of out) {
-      // o dinheiro de quem saiu vai, de preferência, para reforços (posições que você já tem) da mesma classe
-      const same = lines.filter((x) => x.type === l.type && !out.includes(x));
-      const sameOwned = same.filter((x) => x.ownedQty > 0);
-      const pool = sameOwned.length ? sameOwned : same.length ? same : lines.filter((x) => !out.includes(x) && poolOf(x) === poolOf(l));
-      const base = pool.reduce((s2, x) => s2 + x.ideal, 0);
-      for (const x of pool) x.ideal += base ? l.ideal * (x.ideal / base) : l.ideal / pool.length;
-    }
-    for (const l of out) lines.splice(lines.indexOf(l), 1);
-    queue.push(...out.map((l) => l.ticker));
-    warnings.push(`Para não inflar a carteira, abri no máximo ${maxNew} posição(ões) nova(s) neste aporte (as de maior nota). Ficaram para depois: ${out.map((l) => `${l.ticker} (${l.segment})`).join(', ')}.`);
-  }
-
-  // 2b) concentra em até N ativos, repartidos entre as classes pelo dinheiro de cada uma
-  //     (toda classe com fatia relevante fica com ao menos 1); o dinheiro dos ativos que
-  //     ficaram de fora vai para os escolhidos da MESMA classe, para não distorcer o alvo.
   const maxOrders = Number(settings.maxOrders) || 0;
-  if (maxOrders > 0 && lines.length > maxOrders) {
-    const byClass = new Map();
-    for (const l of lines) { if (!byClass.has(l.type)) byClass.set(l.type, []); byClass.get(l.type).push(l); }
-    const classAmt = (t) => byClass.get(t).reduce((s2, l) => s2 + l.ideal, 0);
-    const relevant = [...byClass.keys()].filter((t) => classAmt(t) >= amount * 0.1 || byClass.size === 1 || (split && t === 'internacional'))
-      .sort((a, b) => classAmt(b) - classAmt(a));
-    const quota = new Map(relevant.map((t) => [t, 1]));
-    let left = maxOrders - relevant.length;
-    while (left > 0) { // dá as vagas restantes a quem tem mais dinheiro por vaga
-      const t = relevant.filter((c) => quota.get(c) < byClass.get(c).length).sort((a, b) => classAmt(b) / quota.get(b) - classAmt(a) / quota.get(a))[0];
-      if (!t) break;
-      quota.set(t, quota.get(t) + 1); left--;
-    }
-    const kept = []; const dropped = [];
-    const sumIdeal = (ls) => ls.reduce((s2, l) => s2 + l.ideal, 0);
-    for (const [t, ls] of byClass) {
-      ls.sort((a, b) => b.ideal * (b.score / 100) - a.ideal * (a.score / 100)); // falta de peso × nota
-      const forcedLs = ls.filter((l) => l.forced);
-      const rest = ls.filter((l) => !l.forced);
-      const keep = [...forcedLs, ...rest.slice(0, Math.max(0, (quota.get(t) ?? 0) - forcedLs.length))];
-      const drop = rest.filter((l) => !keep.includes(l));
-      dropped.push(...drop);
-      const extra = sumIdeal(drop); const base = sumIdeal(keep);
-      for (const l of keep) l.ideal += base ? extra * (l.ideal / base) : extra / keep.length;
-      kept.push(...keep);
-    }
-    lines.length = 0; lines.push(...kept);
-    // Classe com fatia pequena (menos de 10%) não ganha vaga: o dinheiro dela vai para os escolhidos.
-    //    Real só vai para Brasil e dólar só para o internacional.
-    for (const pool of split ? ['brl', 'usd'] : ['brl']) {
-      const mine = kept.filter((l) => !split || poolOf(l) === pool);
-      const lost = (split ? (pool === 'usd' ? usdPool : brlForBR) : amount) - sumIdeal(mine);
-      if (lost > 0.01 && mine.length) { const base = sumIdeal(mine); for (const l of mine) l.ideal += base ? lost * (l.ideal / base) : lost / mine.length; }
-    }
-    queue.push(...dropped.map((l) => l.ticker));
-    warnings.push(`Para o aporte não virar ${kept.length + dropped.length} compras pequenas, escolhi ${kept.length} ativos (limite que você define acima): os que mais faltam na sua carteira, desempatando pela nota do ranking. Os outros recomendados continuam na fila e entram nos próximos meses: ${dropped.map((l) => l.ticker).join(', ')}.`);
-  }
+  const opt = optimizeBuys({
+    candidates, classes: optClasses,
+    pools: split ? { brl: brlForBR, usd: usdPool } : { brl: amount, usd: 0 },
+    totalBefore: totalBefore + (intlItem ? intlShare : 0),
+    opts: { maxNew, maxOrders, preferOwned: settings.preferOwned, sectorLimit: lim.setor },
+  });
 
-  // 3) cotas: arredonda para baixo e usa a sobra comprando cotas inteiras onde mais falta.
-  //    Reais e dólares são dois bolsos separados.
-  const left = split ? { brl: brlForBR, usd: usdPool } : { brl: amount, usd: 0 };
-  for (const l of lines) {
-    l.qty = l.fractional ? Math.floor((l.ideal / l.unitBRL) * 10000) / 10000 : Math.floor(l.ideal / l.unitBRL + 1e-9);
-    l.amount = l.qty * l.unitBRL;
-    left[poolOf(l)] -= l.amount;
+  // Linhas da proposta, com o porquê de cada compra.
+  const lines = [];
+  const pctTxt = (x, d = 0) => pctBR(x, d);
+  const classAddOf = (t) => candidates.filter((c) => c.type === t).reduce((s2, c) => s2 + (opt.amounts.get(c.ticker) || 0), 0);
+  for (const c of candidates) {
+    const qty = opt.qty.get(c.ticker) || 0;
+    if (!qty) continue;
+    const amountBRL = qty * c.unitBRL;
+    const cl = optClasses[c.type];
+    const clAfter = cl.invested + classAddOf(c.type);
+    const secAdd = candidates.filter((o) => o.type === c.type && o.sector === c.sector).reduce((s2, o) => s2 + (opt.amounts.get(o.ticker) || 0), 0);
+    const wBefore = cl.invested ? c.current / cl.invested : 0;
+    const wAfter = clAfter ? (c.current + amountBRL) / clAfter : 0;
+    const sBefore = cl.invested ? (cl.sectors.get(c.sector) ?? 0) / cl.invested : 0;
+    const sAfter = clAfter ? ((cl.sectors.get(c.sector) ?? 0) + secAdd) / clAfter : 0;
+    const up = c.asset.ceiling && c.price ? c.asset.ceiling / c.price - 1 : null;
+    const clsBefore = (cl.invested + cl.reserved) / (totalBefore || 1);
+    const firstSentence = (t) => String(t ?? '').split(/(?<=[.!?])\s/)[0].slice(0, 200);
+    const why = {
+      motivo: [
+        cl.fixed ? `usa o dólar/caixinha já reservado para o internacional` : `${ASSET_TYPES[c.type].short} em ${pctTxt(clsBefore)} do patrimônio, alvo ${pctTxt(targets[c.type])}`,
+        `nota ${c.score}${c.an?.verdict ? ` · IA ${c.an.verdict === 'CONCORDA' ? 'concorda' : 'concorda em parte'}${c.an.aiRec ? ` (${c.an.aiRec.toLowerCase()})` : ''}` : ''}`,
+        c.owned ? 'reforço de posição que você já tem' : 'posição nova',
+        up !== null ? `${up >= 0 ? '+' : ''}${Math.round(up * 100)}% até o teto` : '',
+      ].filter(Boolean).join(' · '),
+      peso: `${pctTxt(wBefore, 1)} → ${pctTxt(wAfter, 1)} da classe (limite ${pctTxt(c.limit)})`,
+      setor: c.diversified ? 'ETF amplo: já diversificado' : `${c.sector}: ${pctTxt(sBefore)} → ${pctTxt(sAfter)} da classe (limite ${pctTxt(lim.setor)})`,
+      fundamento: firstSentence(c.an?.fundamentals?.[0] || c.an?.summary) || '—',
+      risco: c.sc.flags?.[0]?.label ? `${c.sc.flags[0].label}${c.an?.risks?.[0] ? ` — ${firstSentence(c.an.risks[0])}` : ''}` : (firstSentence(c.an?.risks?.[0]) || 'nenhum risco relevante apontado'),
+    };
+    lines.push({
+      score: c.score, segment: c.sector, sector: c.sector, forced: c.forced,
+      ownedQty: c.own?.qty ?? 0, ownedValue: c.current,
+      ticker: c.ticker, name: c.asset.name, type: c.type, rec: c.asset.rec, verdict: c.an?.verdict ?? null,
+      price: c.price, currency: ASSET_TYPES[c.type].currency, unitBRL: c.unitBRL, fractional: c.fractional,
+      qty, amount: amountBRL, weightBefore: wBefore, weightAfter: wAfter, sectorBefore: sBefore, sectorAfter: sAfter,
+      why, reason: why.motivo,
+    });
   }
-  const whole = lines.filter((l) => !l.fractional);
-  for (let guard = 0; guard < 5000; guard++) {
-    const candidates = whole.filter((l) => l.unitBRL <= left[poolOf(l)] + 1e-6);
-    if (!candidates.length) break;
-    const best = candidates.reduce((b, l) => ((l.deficit - l.amount) > (b.deficit - b.amount) ? l : b));
-    best.qty += 1; best.amount += best.unitBRL; left[poolOf(best)] -= best.unitBRL;
-  }
-
-  // O que não fechou cota inteira vai para os ativos fracionados (internacional) do mesmo bolso.
-  for (const pool of ['brl', 'usd']) {
-    const frac = lines.filter((l) => l.fractional && poolOf(l) === pool);
-    if (left[pool] <= 1 || !frac.length) continue;
-    const base = frac.reduce((s2, l) => s2 + l.ideal, 0);
-    for (const l of frac) {
-      const add = base ? left[pool] * (l.ideal / base) : left[pool] / frac.length;
-      const q = Math.floor((add / l.unitBRL) * 10000) / 10000;
-      const before = l.amount;
-      l.qty = Math.round((l.qty + q) * 10000) / 10000; l.amount = l.qty * l.unitBRL;
-      left[pool] -= l.amount - before;
-    }
-  }
+  queue.push(...opt.explain.filter((x) => x.category !== 'concentracao' && x.category !== 'setor').map((x) => x.ticker));
 
   const bought = lines.filter((l) => l.qty > 0).sort((a, b) => b.amount - a.amount);
   const invested = bought.reduce((s, l) => s + l.amount, 0);
@@ -413,9 +373,10 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const usdOf = (v) => (usdBrl ? v / usdBrl : 0);
   if (remitNow) warnings.push(`Envio para o exterior neste mês: R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}${reserve > 0 ? `, dos quais R$ ${fmt(reserve)} já estavam na caixinha do dólar` : ''}). Passa do envio mínimo de US$ ${fmt(minRemit)}; a conversão paga IOF de 1,1% e o spread, então chegam um pouco menos dólares — use no campo "Dólar" a cotação da corretora.`);
   else if (toReserve > 1) warnings.push(`A parte do internacional em reais (R$ ${fmt(toReserve)}) vai para a caixinha do dólar: com ela, a caixinha fica com R$ ${fmt(pending)} (≈ US$ ${fmt(usdOf(pending))}), abaixo do envio mínimo de US$ ${fmt(minRemit)}. Faltam ≈ US$ ${fmt(Math.max(0, minRemit - usdOf(pending)))} (≈ R$ ${fmt(Math.max(0, minRemit * usdBrl - pending))}); quando passar, o app propõe o envio. Se preferir já mandar este mês, complete a caixinha com essa diferença e informe o novo valor acima.${usdCashBRL > 0 ? ' Enquanto isso, o internacional deste mês usa só o dólar que já está na corretora.' : ''}`);
+  const minUnit = Math.min(...candidates.filter((c) => c.pool === 'brl').map((c) => c.unitBRL), Infinity);
+  if (brlLeftover > 1 && brlLeftover >= minUnit) warnings.push(`Sobraram ${brlLeftover.toFixed(2).replace('.', ',')} reais: nenhuma outra compra melhorava a carteira sem passar dos limites de concentração ou comprar algo de nota baixa. Fica em caixa para o próximo aporte.`);
   if (frozenBack.length) warnings.push(`${frozenBack.join(', ')} voltou ao relatório deste mês: saiu do congelado e segue as regras normais de compra.`);
-  if (excluded.ceiling.length) warnings.push(`Não comprei ${excluded.ceiling.join(', ')}: a casa recomenda compra, mas o preço atual já passou do preço teto. Esperar o preço voltar.`);
-  for (const x of excluded.ai) warnings.push(`Não comprei ${x.ticker}: a casa recomenda compra, mas a pesquisa da IA discordou${x.why ? ` — "${x.why.slice(0, 180)}${x.why.length > 180 ? '…' : ''}"` : '.'} (desligue "Não aportar onde a IA discorda" para incluir).`);
+  // Quem ficou de fora pelos filtros vai, com o motivo, na lista agrupada (excludedItems), sem repetir aqui.
   if (excluded.aiNoWeb.length) warnings.push(`A IA discorda de ${excluded.aiNoWeb.join(', ')}, mas sem pesquisa na web; não bloqueei. Confirme com a análise por copiar e colar.`);
   if (excluded.noPrice.length) warnings.push(`Sem preço para calcular: ${excluded.noPrice.join(', ')}.`);
   return {
@@ -423,6 +384,17 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     brlAmount: brl, brlForBR, brlInvested: brSpent, brlLeftover,
     usdCash, usdCashBRL, usdLeftover: usdOf(usdLeftBRL), remitted, remitNow,
     reserve, toReserve, reserveAfter, minRemit, intlShare,
+    excludedItems: [
+      ...opt.explain,
+      ...excluded.ceiling.map((t) => ({ ticker: t, category: 'teto', detail: 'preço acima do teto da casa' })),
+      ...excluded.house.map((t) => ({ ticker: t, category: 'casa', detail: 'a casa recomenda aguardar' })),
+      ...excluded.ai.map((x) => ({ ticker: x.ticker, category: 'ia', detail: `a IA discorda${x.why ? `: ${short(x.why)}` : ''}` })),
+      ...excluded.aiWait.map((x) => ({ ticker: x.ticker, category: 'ia', detail: `a IA pede para aguardar${x.why ? `: ${short(x.why)}` : ''}` })),
+      ...excluded.noData.map((x) => ({ ticker: x.ticker, category: 'dados', detail: x.why })),
+      ...excluded.noPrice.map((t) => ({ ticker: t, category: 'dados', detail: 'sem preço' })),
+    ],
+    combosTried: opt.tried, limits: lim,
+    investedBefore: cmp.total, reservedBefore: usdCashBRL + reserve,
     attention: excluded.aiWait.map((x) => x.ticker),
     attentionItems: excluded.aiWait,
     queue, userExcluded: excluded.user, included: [...include],

@@ -896,11 +896,13 @@ function renderAporte() {
       h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxNew', type: 'number', min: 0, max: 10, step: 1, value: String(s.maxNew ?? 2), style: { width: '56px' }, onchange: (e) => { svc.updateSettings({ maxNew: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos novos por aporte'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectAiWait !== false, onchange: (e) => { svc.updateSettings({ respectAiWait: e.target.checked }); render(); } }), 'Seguir o "aguardar" da pesquisa'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.respectCeiling !== false, onchange: (e) => { svc.updateSettings({ respectCeiling: e.target.checked }); render(); } }), 'Não comprar acima do preço teto'),
-      h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)')),
-    h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o aporte vai primeiro para as classes mais abaixo do alvo e, dentro de cada classe, para os ativos em COMPRAR mais abaixo do peso recomendado, desde que o preço não passe do teto. O dinheiro fica concentrado nos ativos que mais precisam (o limite acima); os outros entram nos próximos meses. Nada é vendido. Ações e FIIs em cotas inteiras.'));
+      h('label', { class: 'check' }, 'No máximo', h('input', { id: 'maxOrders', type: 'number', min: 0, max: 30, step: 1, value: String(s.maxOrders ?? 5), style: { width: '64px' }, onchange: (e) => { svc.updateSettings({ maxOrders: Math.max(0, Math.round(Number(e.target.value) || 0)) }); render(); } }), 'ativos por aporte (0 = sem limite)'),
+      h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: s.requireResearch !== false, onchange: (e) => { svc.updateSettings({ requireResearch: e.target.checked }); render(); } }), 'Só comprar o que tem pesquisa atual da IA')),
+    limitsRow(s),
+    h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o app simula combinações de compras (dentro dos limites acima) e fica com a que deixa a CARTEIRA melhor: mais perto das metas por classe, com ativos de melhor qualidade e menos risco segundo a pesquisa, sem passar dos limites de concentração por ativo e por setor (ex.: PETR4 e PRIO3 contam juntas em "Petróleo e gás"). Se nenhuma compra melhorar a carteira, o dinheiro fica em caixa. Nada é vendido; ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.dollarReserve, s.minRemitUSD, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.dollarReserve, s.minRemitUSD, s.limits, s.requireResearch, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
   if (state.keepProposal) { state.proposedKey = paramsKey; state.keepProposal = false; }
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
@@ -920,7 +922,7 @@ function renderAporte() {
     kpi('Sobra', brl(plan.brlLeftover), `em reais${plan.usdLeftover > 0.01 ? ` · US$ ${num(plan.usdLeftover)} ficam na corretora` : ''}`));
 
   // O balanço que a conta usou: quanto cada classe tem, quanto deveria ter depois do aporte e quanto falta.
-  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio ${brl(plan.totalBefore, 0)}${plan.usdCash > 0 || plan.reserve > 0 ? ` (inclui ${[plan.usdCash > 0 ? `US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? `${brl(plan.reserve, 0)} na caixinha` : ''].filter(Boolean).join(' e ')})` : ''} + aporte ${brl(plan.brlAmount, 0)} = ${brl(plan.totalAfter, 0)}`),
+  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `investido ${brl(plan.investedBefore, 0)}${plan.reservedBefore > 0.5 ? ` + reservado ${brl(plan.reservedBefore, 0)} (${[plan.usdCash > 0 ? `US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? 'caixinha do dólar' : ''].filter(Boolean).join(' e ')}, conta no internacional)` : ''} = patrimônio ${brl(plan.totalBefore, 0)} · + aporte ${brl(plan.brlAmount, 0)}${plan.brlLeftover > 0.5 ? ` (sobra ${brl(plan.brlLeftover, 0)} em caixa, fora das porcentagens)` : ''}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Classe', 'Hoje', 'Alvo', 'Valor no alvo', 'Falta para o alvo', 'Recebe agora', 'Por quê'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.classes.map((c) => h('tr', {},
@@ -938,10 +940,11 @@ function renderAporte() {
             : c.need <= 1 ? 'já está no alvo (ou acima): não precisa de dinheiro este mês'
             : c.added <= 0 ? 'falta dinheiro, mas nenhum ativo da classe está liberado para compra (veja abaixo)'
             : c.added < c.need * 0.95 - 5 ? 'recebe parte do que falta; o resto nos próximos aportes' : 'recebe o que falta (a diferença é o arredondamento das cotas)')))))),
-    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, 'A proposta é uma conta (por isso sai na hora): o aporte cobre primeiro o que falta em cada classe para chegar ao alvo e, dentro dela, vai para os ativos liberados com maior nota e mais abaixo do peso. A IA entra na opinião final, abaixo.'));
+    h('p', { class: 'muted small', style: { 'margin-top': '8px' } }, `A proposta é uma conta (sai em segundos): o app testou ${plan.combosTried ?? 0} combinações de compras e ficou com a que mais melhora a carteira inteira. A IA entra de novo na opinião final, abaixo.`));
 
-  const notices = plan.warnings.length || plan.sellAlerts.length ? h('div', { class: 'notice' },
-    h('b', {}, 'Como cheguei nessa proposta'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`)))) : null;
+  const notices = plan.warnings.length || plan.sellAlerts.length || plan.excludedItems?.length ? h('div', { class: 'notice' },
+    h('b', {}, 'Como cheguei nessa proposta'), h('ul', {}, plan.warnings.map((w) => h('li', {}, w)), plan.sellAlerts.map((a) => h('li', {}, `${a.message} Avalie vender (veja o relatório para a questão do IR/DARF).`))),
+    excludedDetails(plan.excludedItems ?? [])) : null;
 
   const classes = card('Classes: antes → depois', h('span', { class: 'muted small' }, 'traço = alvo'),
     bars(plan.classes.map((c) => ({ label: ASSET_TYPES[c.type].short, value: c.pctAfter, target: c.target, cls: `fill-${c.type}`, text: `${pct(c.pctBefore)} → ${pct(c.pctAfter)} (+${brl(c.added, 0)})` })), { max: 1 }));
@@ -950,7 +953,7 @@ function renderAporte() {
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Ativo', 'Classe / segmento', 'Na sua carteira', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte', ''].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
-        h('td', { class: 'tk' }, l.ticker, h('small', { title: l.reason, style: { 'white-space': 'normal', 'max-width': '320px' } }, l.reason)),
+        h('td', { class: 'tk' }, l.ticker, h('small', { style: { 'white-space': 'normal', 'max-width': '320px' } }, l.reason), l.why ? whyDetails(l.why) : null),
         h('td', {}, h('span', { class: `dot type-${l.type}` }), ASSET_TYPES[l.type].short, h('div', { class: 'muted small' }, l.segment), l.forced ? h('span', { class: 'badge rec-MANTER' }, 'incluído por você') : null),
         h('td', { class: 'small' }, l.ownedQty > 0
           ? h('span', {}, `tem ${qtyFmt(l.ownedQty)} (${brl(l.ownedValue, 0)})`, h('br'), h('span', { class: 'muted' }, `fica com ${qtyFmt(Math.round((l.ownedQty + l.qty) * 10000) / 10000)}`))
@@ -987,6 +990,46 @@ function renderAporte() {
       ov.exclude.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Tirados por você:'), ov.exclude.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `desfazer ${t}`))) : null));
 
   return [form, proposeCard, kpis, balance, notices, lines, adjust, attention, registerCard(plan, s), h('div', { class: 'grid two' }, classes, review)];
+}
+
+const EXCLUDED_LABEL = {
+  concentracao: 'Concentração no ativo', setor: 'Concentração no setor', teto: 'Preço acima do teto', casa: 'A casa recomenda aguardar',
+  ia: 'A pesquisa da IA não recomenda comprar', dados: 'Faltam dados atuais (revise a pesquisa)', novas: 'Limite de posições novas',
+  ordens: 'Limite de compras', orcamento: 'Orçamento', atratividade: 'Baixa atratividade', 'menor-ganho': 'Outras compras foram melhores',
+};
+/** Quem ficou de fora, agrupado pelo motivo (expansível, para a tela não ficar poluída). */
+function excludedDetails(items) {
+  if (!items.length) return null;
+  const groups = new Map();
+  for (const x of items) { if (!groups.has(x.category)) groups.set(x.category, []); groups.get(x.category).push(x); }
+  return h('details', { style: { 'margin-top': '8px' } },
+    h('summary', {}, `Por que ${items.length} ativo(s) ficaram de fora`),
+    h('ul', {}, [...groups].map(([cat, xs]) => {
+      const same = xs.every((x) => x.detail === xs[0].detail);
+      return h('li', {}, h('b', {}, `${EXCLUDED_LABEL[cat] ?? cat}: `), xs.map((x) => x.ticker).join(', '),
+        same ? h('div', { class: 'muted small' }, xs[0].detail)
+          : h('ul', { class: 'muted small' }, xs.map((x) => h('li', {}, `${x.ticker}: ${x.detail}`))));
+    })));
+}
+/** O porquê de uma compra: motivo, peso, setor, fundamento e principal risco. */
+function whyDetails(why) {
+  return h('details', { class: 'small', style: { 'margin-top': '4px', 'max-width': '340px', 'white-space': 'normal' } },
+    h('summary', {}, 'por quê'),
+    h('div', {}, h('b', {}, 'Peso: '), why.peso),
+    h('div', {}, h('b', {}, 'Diversificação: '), why.setor),
+    h('div', {}, h('b', {}, 'Fundamento: '), why.fundamento),
+    h('div', {}, h('b', {}, 'Principal risco: '), why.risco));
+}
+/** Limites de concentração (% da classe), configuráveis. */
+function limitsRow(s) {
+  const L = { acoes: 0.15, fiis: 0.12, internacional: 0.2, etfAmplo: 0.4, setor: 0.2, ...(s.limits ?? {}) };
+  const field = (key, label) => h('label', { class: 'check' }, label, h('input', {
+    type: 'number', min: 1, max: 100, step: 1, value: String(Math.round(L[key] * 100)), style: { width: '60px' },
+    onchange: (e) => { const v = Math.min(100, Math.max(1, Number(e.target.value) || 0)) / 100; svc.updateSettings({ limits: { ...L, [key]: v } }); render(); },
+  }), '%');
+  return h('div', { class: 'row', style: { 'margin-top': '8px' } },
+    h('span', { class: 'muted small' }, 'Limites por classe (o ativo já acima é mantido, só não recebe mais):'),
+    field('acoes', 'Ação'), field('fiis', 'FII'), field('internacional', 'Internacional'), field('etfAmplo', 'ETF amplo'), field('setor', 'Setor'));
 }
 
 /**

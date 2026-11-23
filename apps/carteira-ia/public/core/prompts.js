@@ -156,6 +156,8 @@ export function manualAnalysisPrompt(report, assets, today) {
     `PESQUISE NA WEB dados atuais de CADA ativo: ${FOCUS[report.type]}`,
     'Para cada ativo diga se concorda com a recomendação do relatório e por quê, com números e datas.',
     'Regra: quando o relatório diz AGUARDAR (ou o preço está acima do preço teto), não recomende COMPRAR — use AGUARDAR e explique o que precisa mudar (preço, resultado) para virar compra.',
+    'Avalie a QUALIDADE (0 a 10) e se o dividendo é sustentável (coberto pelo resultado recorrente, sem depender de reservas, vendas de imóveis ou ganhos não recorrentes). DY alto sem recorrência não é ponto positivo.',
+    'Informe a data dos dados (dataDados) e não trate cotações antigas como atuais.',
     'Seja breve para caber tudo: no máximo 3 fundamentos, 2 notícias e 2 riscos por ativo.',
     `Responda com UM ÚNICO bloco de código JSON (sem texto fora dele), com os ${assets.length} ativos, neste formato:`,
     JSON.stringify({
@@ -165,6 +167,7 @@ export function manualAnalysisPrompt(report, assets, today) {
         precoAtual: 0, resumo: '2 a 3 frases', fundamentos: ['indicador: valor (período)'],
         noticias: [{ titulo: '...', data: 'AAAA-MM-DD', impacto: 'positivo | negativo | neutro' }],
         riscos: ['...'], confianca: 'alta | media | baixa', fontes: ['https://...'],
+        qualidade: 0, sustentabilidadeDividendo: 'sustentavel | incerta | insustentavel', nivelRisco: 'baixo | medio | alto', dataDados: 'AAAA-MM-DD',
       }],
     }),
   ].filter(Boolean).join('\n');
@@ -187,6 +190,10 @@ export const ANALYSIS_SCHEMA = S('OBJECT', {
           noticias: S('ARRAY', { items: S('OBJECT', { properties: { titulo: S('STRING'), data: S('STRING'), impacto: S('STRING', { enum: ['positivo', 'negativo', 'neutro'] }) }, required: ['titulo'] }) }),
           riscos: S('ARRAY', { items: S('STRING') }),
           confianca: S('STRING', { enum: ['alta', 'media', 'baixa'] }),
+          qualidade: S('NUMBER', { nullable: true, description: 'Qualidade fundamentalista de 0 a 10 (lucro/margens, dívida, ROE; nos FIIs: P/VP, vacância, inadimplência, alavancagem)' }),
+          sustentabilidadeDividendo: S('STRING', { enum: ['sustentavel', 'incerta', 'insustentavel'], description: 'O dividendo/rendimento atual é coberto pelo resultado recorrente?' }),
+          nivelRisco: S('STRING', { enum: ['baixo', 'medio', 'alto'] }),
+          dataDados: S('STRING', { description: 'Data (AAAA-MM-DD) dos dados de preço e indicadores usados' }),
         },
         required: ['ticker', 'veredito', 'resumo'],
       }),
@@ -237,6 +244,10 @@ export function normalizeAnalysis(raw, tickers, sources = []) {
       })).filter((n) => n.title),
       risks: arr(a.riscos, 6).map((x) => str(x, 240)).filter(Boolean),
       confidence: conf.startsWith('a') ? 'alta' : conf.startsWith('b') ? 'baixa' : 'media',
+      quality: Number.isFinite(parseNumber(a.qualidade)) ? Math.max(0, Math.min(10, parseNumber(a.qualidade))) : null,
+      dividendQuality: /insust/i.test(a.sustentabilidadeDividendo) ? 'insustentavel' : /incert/i.test(a.sustentabilidadeDividendo) ? 'incerta' : /sust/i.test(a.sustentabilidadeDividendo) ? 'sustentavel' : null,
+      riskLevel: /alto/i.test(a.nivelRisco) ? 'alto' : /baix/i.test(a.nivelRisco) ? 'baixo' : /m[eé]d/i.test(a.nivelRisco) ? 'medio' : null,
+      dataDate: str(a.dataDados, 20),
       sources: (sources.length ? sources : arr(a.fontes, 8).map((u) => ({ uri: safeHttpUrl(u?.url ?? u), title: '' })).filter((x) => x.uri)).slice(0, 8),
     };
   }
@@ -325,7 +336,9 @@ export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
     `Patrimônio atual: ${brlTxt(plan.totalBefore ?? cmp.total)}. Aporte: ${brlTxt(plan.brlAmount ?? plan.amount)} em reais.${plan.usdCash > 0 ? ` Já há US$ ${plan.usdCash.toFixed(2)} parados na corretora no exterior (≈ ${brlTxt(plan.usdCashBRL)}), que compram internacional sem nova remessa.` : ''}${plan.minRemit > 0 ? ` O envio para o exterior tem mínimo de US$ ${plan.minRemit}; abaixo disso a parte do internacional junta numa caixinha em reais${plan.reserve > 0 ? ` (hoje com ${brlTxt(plan.reserve)})` : ''}.` : ''}${plan.remitNow ? ` Neste mês a caixinha passou do mínimo: enviar ${brlTxt(plan.remitted)} ao exterior.` : plan.toReserve > 0.5 ? ` Neste mês ${brlTxt(plan.toReserve)} vão para a caixinha (fica com ${brlTxt(plan.reserveAfter)}).` : ''}`,
     `Classes (antes → depois → alvo): ${plan.classes.map((c) => `${c.label} ${(c.pctBefore * 100).toFixed(1)}% → ${(c.pctAfter * 100).toFixed(1)}% → ${(c.target * 100).toFixed(0)}%`).join(' · ')}`,
     'Compras propostas:',
-    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker} [${l.segment ?? '?'}${l.ownedQty ? `, já tem ${l.ownedQty}` : ', NOVO'}]: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
+    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker} [${l.segment ?? '?'}${l.ownedQty ? `, já tem ${l.ownedQty}` : ', NOVO'}]: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${l.why ? ` · peso ${l.why.peso} · ${l.why.setor} · risco: ${l.why.risco}` : ''}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
+    plan.limits ? `Limites de concentração usados (fração da classe): ação ${plan.limits.acoes}, FII ${plan.limits.fiis}, internacional ${plan.limits.internacional}, ETF amplo ${plan.limits.etfAmplo}, setor ${plan.limits.setor}.` : '',
+    plan.excludedItems?.length ? `Ficaram de fora (motivo): ${plan.excludedItems.slice(0, 25).map((x) => `${x.ticker} (${x.detail})`).join('; ')}` : '',
     plan.warnings.length ? `Observações do cálculo:\n${plan.warnings.map((w) => `- ${w}`).join('\n')}` : '',
     'Carteira atual por classe e segmento:',
     ...['acoes', 'fiis', 'internacional'].map((t) => {

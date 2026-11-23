@@ -20,7 +20,11 @@ export function createService(store) {
   /** Análises da IA do mês, achatadas por ticker. */
   function analysesFor(month) {
     const out = {};
-    for (const r of reportsFor(month)) Object.assign(out, d().analyses[r.id]?.items ?? {});
+    for (const r of reportsFor(month)) {
+      const an = d().analyses[r.id];
+      // data da pesquisa em cada item (para saber se está desatualizada)
+      for (const [t, it] of Object.entries(an?.items ?? {})) out[t] = { ...it, analyzedAt: it.analyzedAt ?? an.at ?? null };
+    }
     return out;
   }
 

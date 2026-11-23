@@ -31,11 +31,16 @@ O código fica num repositório público, mas **nenhum valor seu vai para o cód
 
 ### Regras do aporte
 
-- Vai primeiro para as classes e os segmentos mais abaixo do alvo; dentro do segmento, reforça o que você já tem antes de abrir posição nova (no máximo N novas por mês).
-- Nunca compra o que a casa manda **aguardar**; o "aguardar" da pesquisa vira "atenção".
-- Não compra acima do preço teto nem onde a pesquisa (com web) discorda.
-- Internacional: o dólar já na corretora compra direto; a parte em reais junta na **caixinha do dólar** até passar do envio mínimo (Nomad: US$ 50) e então o app propõe enviar tudo.
-- Ações e FIIs em cotas inteiras; internacional fracionado. Nada é vendido.
+A proposta olha a **carteira resultante**, não só a nota de cada ativo (`core/optimizer.js`):
+
+1. **Filtros (nunca compra):** a casa diz AGUARDAR; preço acima do teto; a pesquisa da IA (com web) discorda, pede para aguardar ou não dá recomendação clara; sem pesquisa atual (opção ligada por padrão).
+2. **Nota de qualidade (0–100, `core/ranking.js`):** recomendação da casa, parecer da IA (pesa mais com web e confiança alta), riscos encontrados na pesquisa (lucro em queda, dívida, inadimplência, corte de dividendo, distribuição acima do resultado, evento societário, risco estatal) e notícias. DY só conta se o dividendo parecer sustentável. A margem até o teto vale no máximo +6.
+3. **Setores padronizados (`core/sectors.js`):** "Petróleo e Gás" e "Petrolífero" viram o mesmo setor; ETFs amplos (VOO, EEM, DIVO11) contam como diversificados.
+4. **Limites de concentração (configuráveis, % da classe):** ação 15%, FII 12%, internacional 20%, ETF amplo 40%, setor 20%. Ativo ou setor já acima é mantido, mas não recebe aporte que aumente o peso. Nada é vendido.
+5. **Busca:** simula combinações de até N compras (com no máximo N posições novas) e compra cota a cota onde a carteira mais melhora: metas por classe, qualidade, peso recomendado pela casa e folga nos limites. Pode sobrar dinheiro se nenhuma compra melhorar a carteira. Mesmos dados → mesmo resultado.
+6. **Internacional:** o dólar já na corretora compra direto; a parte em reais junta na caixinha do dólar até passar do envio mínimo.
+
+Cada compra mostra o motivo, o peso antes → depois, o setor, o fundamento e o principal risco; quem ficou de fora aparece agrupado pelo motivo.
 
 ## Estrutura
 
@@ -44,7 +49,9 @@ apps/carteira-ia/
   public/                 o app (sem build): index.html, app.js (interface), styles.css
     core/report.js        modelo do relatório, tipo/mês pelo nome do arquivo, conferências
     core/prompts.js       pedidos para a IA (leitura, pesquisa, pareceres)
-    core/ranking.js       nota 0–100 e grupos do ranking
+    core/ranking.js       nota 0–100 (qualidade e riscos) e grupos do ranking
+    core/sectors.js       setores padronizados (concentração de risco)
+    core/optimizer.js     escolha das compras olhando a carteira resultante
     core/portfolio.js     comparação com a carteira e cálculo do aporte (funções puras)
     core/service.js       casos de uso (relatórios, análises, posições, aportes, balanço)
     core/store.js         armazenamento local + backup
