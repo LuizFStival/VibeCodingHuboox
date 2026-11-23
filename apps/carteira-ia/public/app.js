@@ -922,7 +922,7 @@ function renderAporte() {
     kpi('Sobra', brl(plan.brlLeftover), `em reais${plan.usdLeftover > 0.01 ? ` · US$ ${num(plan.usdLeftover)} ficam na corretora` : ''}`));
 
   // O balanço que a conta usou: quanto cada classe tem, quanto deveria ter depois do aporte e quanto falta.
-  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `investido ${brl(plan.investedBefore, 0)}${plan.reservedBefore > 0.5 ? ` + reservado ${brl(plan.reservedBefore, 0)} (${[plan.usdCash > 0 ? `US$ ${num(plan.usdCash)} na corretora` : '', plan.reserve > 0 ? 'caixinha do dólar' : ''].filter(Boolean).join(' e ')}, conta no internacional)` : ''} = patrimônio ${brl(plan.totalBefore, 0)} · + aporte ${brl(plan.brlAmount, 0)}${plan.brlLeftover > 0.5 ? ` (sobra ${brl(plan.brlLeftover, 0)} em caixa, fora das porcentagens)` : ''}`),
+  const balance = card('Balanço usado nesta proposta', h('span', { class: 'muted small' }, `patrimônio da carteira ${brl(plan.totalBefore, 0)}${plan.reservedBefore > 0.5 ? ` (posições ${brl(plan.investedBefore, 0)} + ${[plan.usdCash > 0 ? `US$ ${num(plan.usdCash)} parados na corretora` : '', plan.reserve > 0 ? `${brl(plan.reserve, 0)} na caixinha do dólar, separados para o internacional` : ''].filter(Boolean).join(' + ')})` : ''} + aporte ${brl(plan.brlAmount, 0)} = projetado ${brl(plan.totalAfter, 0)}${plan.brlLeftover > 0.5 ? ` · sobra ${brl(plan.brlLeftover, 0)} em caixa` : ''}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Classe', 'Hoje', 'Alvo', 'Valor no alvo', 'Falta para o alvo', 'Recebe agora', 'Por quê'].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.classes.map((c) => h('tr', {},
