@@ -3,23 +3,25 @@
 // de envio direto da API. Redimensionadas, as páginas ficam em poucos MB no total.
 
 const MAX_PAGES = 40;
-const TARGET_WIDTH = 1240; // px — legível para tabelas pequenas
-const QUALITY = 0.8;
+const TARGET_WIDTH = 1100; // px — ainda legível para as tabelas, com envio menor
+const QUALITY = 0.75;
 
 let pdfjs;
 async function lib() {
   if (!pdfjs) {
-    pdfjs = await import('../vendor/pdfjs/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.mjs', import.meta.url).href;
+    // No painel do Claude o app é um arquivo único; o pdf.js vai como arquivo ao lado da página.
+    const base = globalThis.__PDFJS_BASE__ ? new URL(globalThis.__PDFJS_BASE__, document.baseURI) : new URL('../vendor/pdfjs/', import.meta.url);
+    pdfjs = await import(new URL('pdf.min.mjs', base).href);
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdf.worker.min.mjs', base).href;
   }
   return pdfjs;
 }
 
 /** file: File/Blob. Devolve [{ mimeType, data }] (base64) e o total de páginas. */
-export async function pdfToImages(file, { onPage } = {}) {
+export async function pdfToImages(file, { onPage, maxPages = MAX_PAGES } = {}) {
   const { getDocument } = await lib();
   const doc = await getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
-  const pages = Math.min(doc.numPages, MAX_PAGES);
+  const pages = Math.min(doc.numPages, maxPages, MAX_PAGES);
   const images = [];
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -38,5 +40,5 @@ export async function pdfToImages(file, { onPage } = {}) {
     page.cleanup();
   }
   await doc.destroy();
-  return { images, pages: doc.numPages, truncated: doc.numPages > MAX_PAGES };
+  return { images, pages: doc.numPages, truncated: doc.numPages > pages };
 }
