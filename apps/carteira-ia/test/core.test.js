@@ -913,3 +913,28 @@ test('retorno da IA: recalcula a proposta com os ajustes, mantém as regras e d�
   assert.deepEqual(svc.plan('2026-11', 450).lines.map((l) => l.ticker), plan0.lines.map((l) => l.ticker));
   assert.throws(() => svc.applyAiReview('2026-11', 'gostei'), /Não encontrei ajustes/);
 });
+
+test('ETF amplo não sofre limite de setor (só o limite próprio de ETF amplo); ETF temático sofre', () => {
+  // ações: 4 posições; DIVO11 (índice) já em 40% e setor "Diversificado" seria 40% → mesmo assim pode receber até o limite de ETF amplo
+  const r = [normalizeReport({ assets: [
+    { ticker: 'DIVO11', segment: 'Ibov', allocationPct: 50, price: 100, ceilingPrice: 150, recommendation: 'COMPRAR' },
+    { ticker: 'PETR4', segment: 'Petróleo e Gás', allocationPct: 50, price: 40, ceilingPrice: 60, recommendation: 'COMPRAR' },
+  ] }, { type: 'acoes', month: '2026-11' })];
+  const holdings = [
+    { id: 'a', ticker: 'DIVO11', type: 'acoes', qty: 3, price: 100 }, { id: 'b', ticker: 'BBAS3', type: 'acoes', qty: 10, price: 15, segment: 'Bancos' },
+    { id: 'c', ticker: 'VALE3', type: 'acoes', qty: 2, price: 60, segment: 'Mineração' }, { id: 'd', ticker: 'PRIO3', type: 'acoes', qty: 3, price: 50, segment: 'Petrolífero' },
+  ]; // total 750: DIVO11 40%, PRIO3 20% (petróleo já no limite de 20%)
+  const st = { targets: { acoes: 1, fiis: 0, internacional: 0 }, usdBrl: 5, maxOrders: 0, maxNew: -1, limits: { acoes: 0.15, etfAmplo: 0.6, setor: 0.2 } };
+  const plan = planAporte({ amount: 300, holdings, reports: r, settings: st });
+  const divo = plan.lines.find((l) => l.ticker === 'DIVO11');
+  assert.ok(divo && divo.weightAfter > 0.4, 'DIVO11 recebe acima de 40% (passaria do "setor" de 20% se fosse tratado como empresa)');
+  assert.ok(divo.weightAfter <= 0.6 + 1e-9, 'respeita o limite de ETF amplo');
+  assert.match(divo.why.setor, /ETF amplo/);
+  // uma empresa comum (PETR4) sofre o limite de setor: com PRIO3 já em 20% do setor petróleo, não entra
+  const only = planAporte({ amount: 100, holdings, reports: [normalizeReport({ assets: [r[0].assets[1]].map((x) => ({ ticker: x.ticker, segment: x.segment, allocationPct: 100, price: x.price, ceilingPrice: x.ceiling, recommendation: 'COMPRAR' })) }, { type: 'acoes', month: '2026-11' })], settings: st });
+  assert.equal(only.lines.length, 0);
+  assert.ok(only.excludedItems.some((x) => x.ticker === 'PETR4' && x.category === 'setor'), JSON.stringify(only.excludedItems));
+  // ETF temático (ouro, cobre, renda fixa, cripto) não é diversificado: tem setor próprio e sofre o limite
+  assert.equal(sectorOf('GLD', 'ETF'), 'Ouro');
+  assert.equal(sectorOf('IBIT', 'ETF'), 'Cripto');
+});
