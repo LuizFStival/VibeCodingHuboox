@@ -401,9 +401,10 @@ export function parseAiAdjustments(text) {
   const T = (x) => normalizeTicker(x);
   const list = (v) => (Array.isArray(v) ? v : typeof v === 'string' && v ? v.split(/[,;\s]+/) : []).map(T).filter((t) => /^[A-Z0-9]{2,7}$/.test(t));
   let json = null;
+  try { const j = JSON.parse(raw.trim()); if (j && typeof j === 'object' && !Array.isArray(j)) json = j; } catch { /* não é só JSON */ }
   const blocks = [...raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((m) => m[1]);
-  for (const b of blocks.reverse()) { try { const j = JSON.parse(b); if (j && typeof j === 'object') { json = j; break; } } catch { /* tenta o próximo */ } }
-  if (!json) { const m = raw.match(/\{[^{}]*"(tirar|incluir|limites|maxNovos)"[\s\S]*\}/); if (m) { try { json = JSON.parse(m[0]); } catch { /* sem JSON */ } } }
+  if (!json) for (const b of blocks.reverse()) { try { const j = JSON.parse(b); if (j && typeof j === 'object') { json = j; break; } } catch { /* tenta o próximo */ } }
+  if (!json) { const m = raw.match(/\{[^{}]*"(veredito|tirar|incluir|limites|maxNovos|motivos)"[\s\S]*\}/); if (m) { try { json = JSON.parse(m[0]); } catch { /* sem JSON */ } } }
   const adj = { tirar: [], incluir: [], limites: {}, maxNovos: null, motivos: [], veredito: null, source: json ? 'json' : 'texto' };
   if (json) {
     adj.tirar = list(json.tirar ?? json.remover ?? json.excluir);
@@ -427,5 +428,6 @@ export function parseAiAdjustments(text) {
   }
   adj.tirar = [...new Set(adj.tirar)]; adj.incluir = [...new Set(adj.incluir)].filter((t) => !adj.tirar.includes(t));
   const has = adj.tirar.length || adj.incluir.length || Object.keys(adj.limites).length || adj.maxNovos !== null;
-  return has || adj.veredito === 'aprovar' ? adj : null;
+  // Resposta no formato pedido, mesmo sem troca automática (só recomendações), também vale.
+  return has || adj.veredito || adj.motivos.length ? adj : null;
 }

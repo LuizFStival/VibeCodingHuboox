@@ -1016,10 +1016,10 @@ function aiFinalCard(plan, ov) {
   for (const t of ai.unknown ?? []) notApplied.push(`${t}: não está nas carteiras recomendadas deste mês nem na sua carteira`);
   return card('Versão final: proposta recalculada com a revisão da IA', h('span', { class: 'muted small' }, `aplicada em ${new Date(ai.at).toLocaleString('pt-BR')}`),
     h('div', { class: 'stack' },
-      ai.veredito === 'aprovar' && !applied.length ? h('p', {}, 'A IA aprovou a proposta sem mudanças.') : null,
+      !applied.length && !notApplied.length ? h('p', {}, ai.veredito === 'aprovar' ? 'A IA aprovou a proposta sem mudanças.' : 'A IA não pediu trocas automáticas: a proposta continua a mesma. Confira as recomendações abaixo antes de executar.') : null,
       applied.length ? h('p', {}, h('b', {}, 'Ajustes aplicados: '), applied.join(' · ')) : null,
       notApplied.length ? h('p', {}, h('b', {}, 'Não aplicados (as regras do app continuam valendo): '), notApplied.join(' · ')) : null,
-      ai.motivos?.length ? h('details', {}, h('summary', { class: 'small' }, 'Motivos da IA'), h('ul', { class: 'small' }, ai.motivos.map((m) => h('li', {}, m)))) : null,
+      ai.motivos?.length ? h('details', { open: !applied.length || null }, h('summary', { class: 'small' }, applied.length ? 'Motivos da IA' : 'Recomendações da IA para você conferir'), h('ul', { class: 'small' }, ai.motivos.map((m) => h('li', {}, m)))) : null,
       before.length ? h('p', { class: 'small' }, h('b', {}, 'Antes: '), before.join(', '), h('br'), h('b', {}, 'Agora: '), now.join(', ') || 'nenhuma compra') : null,
       h('div', { class: 'row' }, confirmButton('Desfazer a revisão da IA', 'Clique de novo para voltar à proposta original', () => { svc.clearAiReview(state.month); state.keepProposal = true; toast('Voltei para a proposta original do app.'); render(); }, 'btn small'))));
 }
@@ -1238,7 +1238,7 @@ function applyAiReturn(month, text, plan, aporte) {
     if (state.reviewPaste.plan) { svc.saveNote(month, 'plan', state.reviewPaste.plan, 'GPT/Gemini (copiar e colar)'); state.reviewPaste.plan = ''; }
     const ai = svc.applyAiReview(month, text, { amount: aporte, before: plan.lines.map((l) => ({ ticker: l.ticker, qty: l.qty })) });
     state.keepProposal = true;
-    toast(ai.exclude.length || ai.include.length || Object.keys(ai.limits ?? {}).length || Number.isFinite(ai.maxNew) ? 'Retorno da IA aplicado: veja a versão final no topo da proposta.' : 'A IA aprovou a proposta: nada a mudar.');
+    toast(ai.exclude.length || ai.include.length || Object.keys(ai.limits ?? {}).length || Number.isFinite(ai.maxNew) ? 'Retorno da IA aplicado: veja a versão final no topo da proposta.' : ai.veredito === 'aprovar' ? 'A IA aprovou a proposta: nada a mudar.' : 'A IA não pediu trocas automáticas: a proposta continua igual. As recomendações dela estão no topo da proposta.');
     render();
     setTimeout(() => document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }), 50);
   } catch (e) { toast(e.message, true); }

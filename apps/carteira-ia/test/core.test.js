@@ -938,3 +938,20 @@ test('ETF amplo não sofre limite de setor (só o limite próprio de ETF amplo);
   assert.equal(sectorOf('GLD', 'ETF'), 'Ouro');
   assert.equal(sectorOf('IBIT', 'ETF'), 'Cripto');
 });
+
+test('retorno da IA só com recomendações (sem trocas) e JSON sem cercas também é aceito', () => {
+  const gpt = `{
+  "veredito": "ajustar",
+  "tirar": [],
+  "incluir": [],
+  "limites": {},
+  "motivos": ["Manter os quatro ativos selecionados.", "Atualizar as cotações antes de executar."]
+}`;
+  const adj = parseAiAdjustments(gpt);
+  assert.ok(adj, 'aceita');
+  assert.deepEqual([adj.veredito, adj.tirar, adj.incluir, adj.motivos.length, adj.source], ['ajustar', [], [], 2, 'json']);
+  const svc = createService(createStore(memoryStorage()));
+  svc.importReportJson({ ...fixture('acoes.json'), type: 'acoes', month: '2026-11' });
+  const ai = svc.applyAiReview('2026-11', gpt, { amount: 450, before: [] });
+  assert.deepEqual([ai.exclude, ai.include, ai.motivos.length], [[], [], 2]);
+});
