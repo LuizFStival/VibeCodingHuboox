@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS = {
   // Limites de concentração, em fração da classe (configuráveis). Ativo já acima do limite
   // é mantido, mas não recebe aporte que aumente o seu peso. Nada é vendido.
   limits: { acoes: 0.15, fiis: 0.12, internacional: 0.20, etfAmplo: 0.40, setor: 0.20 },
+  limitMargin: 0.01,     // folga: compra até 1 ponto abaixo de cada limite (espaço para a cotação subir)
   requireResearch: true, // sem pesquisa atual da IA (com web), o ativo não entra na proposta
   sectorOverrides: {},   // correções de setor por ticker, ex.: { "XYZW3": "Bancos" }
 };
@@ -70,14 +71,14 @@ const pctBR = (x, d) => `${(x * 100).toFixed(d).replace('.', ',')}%`;
 const fxFor = (type, settings) => (ASSET_TYPES[type]?.currency === 'USD' ? Number(settings.usdBrl) || 0 : 1);
 
 /** Preço atual na moeda do ativo: o informado na posição > IA > relatório > preço médio. */
-export function priceOf(ticker, universe, holding) {
+export function priceOf(ticker, universe, holding, overrides = {}) {
   const u = universe.get(ticker);
-  return holding?.price || u?.analysis?.price || u?.asset?.price || holding?.avgPrice || null;
+  return overrides?.[ticker] || holding?.price || u?.analysis?.price || u?.asset?.price || holding?.avgPrice || null;
 }
 
 function holdingRows(holdings, universe, settings) {
   return holdings.map((h) => {
-    const price = priceOf(h.ticker, universe, h);
+    const price = priceOf(h.ticker, universe, h, settings.prices);
     const fx = fxFor(h.type, settings);
     const value = price ? h.qty * price * fx : 0;
     const cost = h.avgPrice ? h.qty * h.avgPrice * fx : null;
@@ -191,13 +192,13 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   const isEligible = (a) => {
     if (exclude.has(a.ticker)) { excluded.user.push(a.ticker); return false; }
     if (include.has(a.ticker) && a.rec !== 'VENDER') {
-      const p = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
+      const p = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker), settings.prices);
       if (p) return true;
     }
     if (a.weight <= 0) return false;
     const recOk = a.rec === 'COMPRAR' || (settings.includeAguardar && (a.rec === 'AGUARDAR' || a.rec === 'MANTER'));
     if (!recOk) { if (a.rec !== 'VENDER') excluded.house.push(a.ticker); return false; }
-    const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker));
+    const price = priceOf(a.ticker, universe, holdings.find((h) => h.ticker === a.ticker), settings.prices);
     if (!price) { excluded.noPrice.push(a.ticker); return false; }
     const an = analyses[a.ticker];
     // Sem pesquisa atual (com web e depois da leitura do relatório): pede revisão antes de recomendar.
@@ -261,6 +262,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   //    qualidade e riscos de cada ativo, peso recomendado pela casa e limites de concentração
   //    por ativo e por setor. Combina até `maxOrders` ativos (no máximo `maxNew` novos).
   const lim = { ...DEFAULT_SETTINGS.limits, ...(settings.limits ?? {}) };
+  // Folga: o otimizador compra até um pouco abaixo de cada limite (a cotação pode subir depois).
+  const margin = Math.max(0, Math.min(0.1, Number(settings.limitMargin) || 0));
+  const buyLimit = (x) => Math.max(0.01, x - margin);
   const overrides = settings.sectorOverrides ?? {};
   const holdingValue = new Map(cmp.rows.map((r) => [r.ticker, r.value]));
   const sectorOfRow = (r) => sectorOf(r.ticker, reports.find((rep) => rep.type === r.type)?.assets.find((a) => a.ticker === r.ticker)?.segment || r.segment, overrides);
@@ -282,13 +286,13 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     const fx = fxFor(ci.key, settings);
     for (const a of ci.eligible) {
       const own = holdings.find((h) => h.ticker === a.ticker);
-      const price = priceOf(a.ticker, universe, own);
+      const price = priceOf(a.ticker, universe, own, settings.prices);
       const an = analyses[a.ticker];
       const sc = scoreAsset(a, an);
       const sector = sectorOf(a.ticker, a.segment, overrides);
       const diversified = isDiversified(sector);
       candidates.push({
-        ticker: a.ticker, type: ci.key, sector, diversified, limit: diversified ? lim.etfAmplo : lim[ci.key] ?? 0.15,
+        ticker: a.ticker, type: ci.key, sector, diversified, limit: buyLimit(diversified ? lim.etfAmplo : lim[ci.key] ?? 0.15), fullLimit: diversified ? lim.etfAmplo : lim[ci.key] ?? 0.15,
         unitBRL: price * fx, fractional: ci.key === 'internacional' && Boolean(settings.fractionalIntl),
         current: holdingValue.get(a.ticker) ?? 0, owned: (holdingValue.get(a.ticker) ?? 0) > 0, forced: include.has(a.ticker),
         q: Math.max(-1, Math.min(1, (sc.score - 55) / 40)), score: sc.score, houseW: weights.get(a.ticker) ?? 0,
@@ -302,7 +306,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
     candidates, classes: optClasses,
     pools: split ? { brl: brlForBR, usd: usdPool } : { brl: amount, usd: 0 },
     totalBefore: totalBefore + (intlItem ? intlShare : 0),
-    opts: { maxNew, maxOrders, preferOwned: settings.preferOwned, sectorLimit: lim.setor },
+    opts: { maxNew, maxOrders, preferOwned: settings.preferOwned, sectorLimit: buyLimit(lim.setor) },
   };
   const opt = optimizeBuys(optInput);
   // Abrir posição nova compensa? Compara com a melhor proposta só reforçando o que você já tem.
@@ -353,8 +357,8 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
         c.owned ? 'reforço de posição que você já tem' : 'posição nova',
         up !== null ? `${up >= 0 ? '+' : ''}${Math.round(up * 100)}% até o teto` : '',
       ].filter(Boolean).join(' · '),
-      peso: `${pctTxt(wBefore, 1)} → ${pctTxt(wAfter, 1)} da classe (limite ${pctTxt(c.limit)})`,
-      setor: c.diversified ? 'ETF amplo: já diversificado' : `${c.sector}: ${pctTxt(sBefore)} → ${pctTxt(sAfter)} da classe (limite ${pctTxt(lim.setor)})`,
+      peso: `${pctTxt(wBefore, 1)} → ${pctTxt(wAfter, 1)} da classe (limite ${pctTxt(c.fullLimit)}${margin ? `, compra até ${pctTxt(c.limit)}` : ''})`,
+      setor: c.diversified ? 'ETF amplo: já diversificado' : `${c.sector}: ${pctTxt(sBefore)} → ${pctTxt(sAfter)} da classe (limite ${pctTxt(lim.setor)}${margin ? `, compra até ${pctTxt(buyLimit(lim.setor))}` : ''})`,
       fundamento: firstSentence(c.an?.fundamentals?.[0] || c.an?.summary) || '—',
       alternativa: c.owned ? '' : sameSectorNote(c),
       risco: c.sc.flags?.[0]?.label ? `${c.sc.flags[0].label}${c.an?.risks?.[0] ? ` — ${firstSentence(c.an.risks[0])}` : ''}` : (firstSentence(c.an?.risks?.[0]) || 'nenhum risco relevante apontado'),
@@ -364,6 +368,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       ownedQty: c.own?.qty ?? 0, ownedValue: c.current,
       ticker: c.ticker, name: c.asset.name, type: c.type, rec: c.asset.rec, verdict: c.an?.verdict ?? null,
       price: c.price, currency: ASSET_TYPES[c.type].currency, unitBRL: c.unitBRL, fractional: c.fractional,
+      priceSource: settings.prices?.[c.ticker] ? 'informado por você' : c.own?.price ? 'informado em Minha carteira' : c.an?.price ? `pesquisa${c.an.analyzedAt ? ` de ${new Date(c.an.analyzedAt).toLocaleDateString('pt-BR')}` : ''}` : 'relatório da casa',
       qty, amount: amountBRL, weightBefore: wBefore, weightAfter: wAfter, sectorBefore: sBefore, sectorAfter: sAfter,
       why, reason: why.motivo,
     });
@@ -417,7 +422,7 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
       ...excluded.noData.map((x) => ({ ticker: x.ticker, category: 'dados', detail: x.why })),
       ...excluded.noPrice.map((t) => ({ ticker: t, category: 'dados', detail: 'sem preço' })),
     ],
-    combosTried: opt.tried, limits: lim, onlyOwned,
+    combosTried: opt.tried, limits: lim, limitMargin: margin, onlyOwned,
     investedBefore: cmp.total, reservedBefore: usdCashBRL + reserve,
     attention: excluded.aiWait.map((x) => x.ticker),
     attentionItems: excluded.aiWait,

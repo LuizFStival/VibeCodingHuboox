@@ -903,7 +903,7 @@ function renderAporte() {
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Como é calculado: o app simula combinações de compras (dentro dos limites acima) e fica com a que deixa a CARTEIRA melhor: mais perto das metas por classe, com ativos de melhor qualidade e menos risco segundo a pesquisa, sem passar dos limites de concentração por ativo e por setor (ex.: PETR4 e PRIO3 contam juntas em "Petróleo e gás"). Se nenhuma compra melhorar a carteira, o dinheiro fica em caixa. Nada é vendido; ações e FIIs em cotas inteiras.'));
 
   // O plano só aparece depois de "Propor aporte"; se os parâmetros mudarem, pede para propor de novo.
-  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.dollarReserve, s.minRemitUSD, s.limits, s.requireResearch, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
+  const paramsKey = JSON.stringify([state.month, aporte, s.targets, s.usdBrl, s.respectAi, s.respectAiWait, s.includeAguardar, s.fractionalIntl, s.respectCeiling, s.maxOrders, s.preferOwned, s.maxNew, s.usdCash, s.dollarReserve, s.minRemitUSD, s.limits, s.requireResearch, s.limitMargin, svc.holdings().map((x) => [x.ticker, x.qty]), svc.planOverrides(state.month)]);
   if (state.keepProposal) { state.proposedKey = paramsKey; state.keepProposal = false; }
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
@@ -967,7 +967,7 @@ function renderAporte() {
           ? h('span', {}, `tem ${qtyFmt(l.ownedQty)} (${brl(l.ownedValue, 0)})`, h('br'), h('span', { class: 'muted' }, `fica com ${qtyFmt(Math.round((l.ownedQty + l.qty) * 10000) / 10000)}`))
           : h('span', { class: 'badge rec-MANTER' }, 'Novo na carteira')),
         h('td', {}, recBadge(l.rec), ' ', verdictBadge(l.verdict)),
-        h('td', { class: 'num' }, money(l.price, l.currency)),
+        h('td', { class: 'num' }, priceInput(l)),
         h('td', { class: 'num' }, `${qtyFmt(l.qty)} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'}`),
         h('td', { class: 'num' }, brl(l.amount), l.currency === 'USD' && l.price ? h('div', { class: 'muted small' }, `US$ ${num(l.amount / (l.unitBRL / l.price))}`) : null),
         h('td', { class: 'num' }, pct(plan.amount ? l.amount / plan.amount : 0)),
@@ -1053,6 +1053,18 @@ function whyDetails(why) {
     h('div', {}, h('b', {}, 'Fundamento: '), why.fundamento),
     h('div', {}, h('b', {}, 'Principal risco: '), why.risco));
 }
+/** Preço da linha editável: corrija com a cotação de agora e a proposta recalcula (checando o teto de novo). */
+function priceInput(l) {
+  const cur = l.currency === 'USD' ? 'US$' : 'R$';
+  const own = svc.planOverrides(state.month).prices?.[l.ticker];
+  return h('div', {},
+    h('span', { class: 'row', style: { gap: '4px', 'justify-content': 'flex-end', 'flex-wrap': 'nowrap' } }, h('span', { class: 'muted small' }, cur),
+      h('input', { type: 'number', min: 0, step: 0.01, value: String(Math.round(l.price * 100) / 100), style: { width: '84px' }, title: 'Cotação de agora: altere e a proposta recalcula',
+        onchange: (e) => { svc.setPlanPrice(state.month, l.ticker, Number(e.target.value) || null); state.keepProposal = true; toast(`${l.ticker}: preço atualizado, proposta recalculada.`); render(); } })),
+    h('div', { class: 'muted small' }, l.priceSource ?? ''),
+    own ? h('button', { class: 'btn ghost small', type: 'button', onclick: () => { svc.setPlanPrice(state.month, l.ticker, null); state.keepProposal = true; render(); } }, 'voltar ao preço da pesquisa') : null);
+}
+
 /** "Abrir posição nova compensa?": a melhor proposta só reforçando o que você já tem, para comparar. */
 function onlyOwnedNote(plan) {
   const o = plan.onlyOwned;
@@ -1113,6 +1125,8 @@ function limitsRow(s) {
       field('internacional', 'Por ativo internacional', 'ex.: STAG dentro do internacional'),
       field('etfAmplo', 'Por ETF amplo', 'DIVO11, VOO, EEM: já são uma cesta de ações'),
       field('setor', 'Por setor', 'soma do mesmo setor (petróleo, bancos, papel…)')),
+    h('label', { class: 'check', style: { 'margin-top': '8px' } }, 'Folga: comprar até', h('input', { id: 'limitMargin', type: 'number', min: 0, max: 5, step: 0.5, value: String(Math.round((s.limitMargin ?? 0.01) * 1000) / 10), style: { width: '60px' },
+      onchange: (e) => { svc.updateSettings({ limitMargin: Math.min(5, Math.max(0, Number(e.target.value) || 0)) / 100 }); render(); } }), 'ponto(s) abaixo de cada limite (espaço para a cotação subir depois da compra)'),
     h('p', { class: 'muted small', style: { 'margin-top': '6px' } }, 'Como escolher: 100 ÷ limite ≈ quantos ativos a classe precisa ter, no mínimo, para caber tudo (15% → 7 ações; 12% → 8 FIIs). Limite menor espalha mais o risco; maior deixa concentrar nos melhores. Quem já passou do limite não é vendido: só para de receber aporte até o peso cair.'));
 }
 

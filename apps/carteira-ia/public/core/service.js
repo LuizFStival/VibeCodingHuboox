@@ -402,7 +402,7 @@ export function createService(store) {
       const include = [...new Set([...(ov.include ?? []), ...(ai.include ?? [])])].filter((t) => !exclude.includes(t));
       const s = d().settings;
       return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month),
-        settings: { ...s, include, exclude, limits: { ...(s.limits ?? {}), ...(ai.limits ?? {}) }, maxNew: ai.maxNew ?? s.maxNew } });
+        settings: { ...s, include, exclude, prices: ov.prices ?? {}, limits: { ...(s.limits ?? {}), ...(ai.limits ?? {}) }, maxNew: ai.maxNew ?? s.maxNew } });
     },
     /** Ajuste manual da proposta do mês: tirar ou incluir um ativo (ex.: aplicar a sugestão da IA). */
     planOverrides: (month) => d().settings.planOverrides?.[month] ?? { include: [], exclude: [] },
@@ -439,6 +439,18 @@ export function createService(store) {
         data.settings = { ...data.settings, planOverrides: all };
       });
       return ai;
+    },
+    /** Cotação de agora para um ativo neste mês (corrige o preço da pesquisa). null apaga. */
+    setPlanPrice(month, ticker, price) {
+      const p = parseNumber(price);
+      store.update((data) => {
+        const all = { ...(data.settings.planOverrides ?? {}) };
+        const ov = { include: [], exclude: [], ...(all[month] ?? {}) };
+        const prices = { ...(ov.prices ?? {}) };
+        if (p > 0) prices[ticker] = p; else delete prices[ticker];
+        all[month] = { ...ov, prices };
+        data.settings = { ...data.settings, planOverrides: all };
+      });
     },
     clearAiReview(month) {
       store.update((data) => {

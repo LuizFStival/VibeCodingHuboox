@@ -955,3 +955,35 @@ test('retorno da IA só com recomendações (sem trocas) e JSON sem cercas tamb�
   const ai = svc.applyAiReview('2026-11', gpt, { amount: 450, before: [] });
   assert.deepEqual([ai.exclude, ai.include, ai.motivos.length], [[], [], 2]);
 });
+
+test('folga nos limites: compra até 1 ponto abaixo do limite', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const plan = planAporte({ amount: 450, holdings, reports, analyses, settings: { ...settings, limitMargin: 0.01 } });
+  assert.equal(plan.limitMargin, 0.01);
+  for (const l of plan.lines) {
+    const lim = (l.sector.startsWith('Diversificado') ? 0.4 : settings.limits[l.type]) - 0.01;
+    assert.ok(l.weightAfter <= Math.max(lim, l.weightBefore) + 1e-9, `${l.ticker} ${l.weightAfter} > ${lim}`);
+    if (!l.sector.startsWith('Diversificado')) assert.ok(l.sectorAfter <= Math.max(0.19, l.sectorBefore) + 1e-9, `${l.ticker} setor ${l.sectorAfter}`);
+    assert.match(l.why.peso, /compra até/);
+  }
+});
+
+test('preço de agora na proposta: recalcula e confere o teto de novo', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const svc = createService(createStore(memoryStorage()));
+  for (const r of reports) svc.importReportJson({ ...r, assets: r.assets.map((a) => ({ ticker: a.ticker, segment: a.segment, allocationPct: a.weight * 100, price: a.price, ceilingPrice: a.ceiling, recommendation: a.rec })) });
+  for (const h of holdings) svc.upsertHolding(h);
+  svc.updateSettings({ ...settings, requireResearch: false, maxNew: 5 });
+  const before = svc.plan('2026-11', 450);
+  const t = before.lines.find((l) => !l.ownedQty)?.ticker ?? before.lines[0].ticker;
+  const ceiling = reports.flatMap((r) => r.assets).find((a) => a.ticker === t).ceiling;
+  svc.setPlanPrice('2026-11', t, ceiling * 1.1); // subiu e passou do teto
+  const after = svc.plan('2026-11', 450);
+  assert.ok(!after.lines.some((l) => l.ticker === t), `${t} acima do teto sai da proposta`);
+  assert.ok(after.excludedItems.some((x) => x.ticker === t && x.category === 'teto'));
+  svc.setPlanPrice('2026-11', t, ceiling * 0.9);
+  const ok = svc.plan('2026-11', 450).lines.find((l) => l.ticker === t);
+  if (ok) { assert.equal(ok.price, ceiling * 0.9); assert.equal(ok.priceSource, 'informado por você'); }
+  svc.setPlanPrice('2026-11', t, null);
+  assert.equal(svc.planOverrides('2026-11').prices[t], undefined);
+});
