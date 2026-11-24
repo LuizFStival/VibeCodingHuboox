@@ -308,8 +308,9 @@ export function planAporte({ amount, holdings, reports, analyses = {}, settings 
   // Abrir posição nova compensa? Compara com a melhor proposta só reforçando o que você já tem.
   let onlyOwned = null;
   if (maxNew !== 0 && candidates.some((c) => opt.qty.get(c.ticker) && !c.owned)) {
-    const alt = optimizeBuys({ ...optInput, opts: { ...optInput.opts, maxNew: 0 } });
-    const buys = candidates.filter((c) => alt.qty.get(c.ticker)).map((c) => ({ ticker: c.ticker, qty: alt.qty.get(c.ticker), amount: alt.qty.get(c.ticker) * c.unitBRL }));
+    const owned = candidates.filter((c) => c.owned); // só o que você já tem (nem os incluídos novos)
+    const alt = optimizeBuys({ ...optInput, candidates: owned, opts: { ...optInput.opts, maxNew: 0 } });
+    const buys = owned.filter((c) => alt.qty.get(c.ticker)).map((c) => ({ ticker: c.ticker, qty: alt.qty.get(c.ticker), amount: alt.qty.get(c.ticker) * c.unitBRL }));
     const inv = buys.reduce((s2, b) => s2 + b.amount, 0);
     onlyOwned = { buys, invested: inv, leftover: Math.max(0, amount - inv), better: opt.score > alt.score + 1e-9 };
   }

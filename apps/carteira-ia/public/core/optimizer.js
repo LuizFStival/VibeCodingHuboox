@@ -168,25 +168,34 @@ export function optimizeBuys({ candidates, classes, pools, totalBefore, opts }) 
   // Enche uma combinação: compra onde a carteira mais melhora, até nada mais melhorar.
   const fill = (subset) => {
     const amounts = new Map(); const qty = new Map();
-
     const left = { brl: pools.brl || 0, usd: pools.usd || 0 };
+    const forcedIn = subset.filter((c) => c.forced);
     let cur = evaluate(amounts, false, spreadK);
-    for (let guard = 0; guard < 4000; guard++) {
-      let best = null;
-      for (const c of subset) {
-        const { chunk, qty: dq } = step(c, left);
-        if (dq <= 0 || chunk <= 0 || !allowed(c, amounts, chunk, left)) continue;
-        const next = new Map(amounts); next.set(c.ticker, (amounts.get(c.ticker) || 0) + chunk);
-        const gain = evaluate(next, false, spreadK) - cur;
-        // incluído por você: a 1ª cota entra mesmo sem ganho (se couber nos limites)
-        const must = c.forced && !amounts.get(c.ticker);
-        if ((gain > 1e-9 || must) && (!best || (must && !best.must) || (must === best.must && gain > best.gain + 1e-12))) best = { c, chunk, dq, gain, next, must };
+    // Fase 1: o dinheiro da 1ª cota dos ativos incluídos (por você ou pela revisão da IA) fica
+    // reservado enquanto eles ainda não cabem nos limites (outras compras da classe podem abrir
+    // espaço). Fase 2, só se algum incluído não coube: libera a reserva para o resto.
+    for (const phase of [1, 2]) {
+      if (phase === 2 && forcedIn.every((f) => amounts.get(f.ticker))) break;
+      for (let guard = 0; guard < 4000; guard++) {
+        const reserve = { brl: 0, usd: 0 };
+        if (phase === 1) for (const f of forcedIn) if (!amounts.get(f.ticker)) reserve[f.pool] += step(f, left).chunk;
+        let best = null;
+        for (const c of subset) {
+          const { chunk, qty: dq } = step(c, left);
+          const pendingForced = c.forced && !amounts.get(c.ticker);
+          const avail = pendingForced ? left : { brl: left.brl - reserve.brl, usd: left.usd - reserve.usd };
+          if (dq <= 0 || chunk <= 0 || !allowed(c, amounts, chunk, avail)) continue;
+          const next = new Map(amounts); next.set(c.ticker, (amounts.get(c.ticker) || 0) + chunk);
+          const gain = evaluate(next, false, spreadK) - cur;
+          // incluído: a 1ª cota entra mesmo sem ganho (se couber nos limites)
+          if ((gain > 1e-9 || pendingForced) && (!best || (pendingForced && !best.must) || (pendingForced === best.must && gain > best.gain + 1e-12))) best = { c, chunk, dq, gain, next, must: pendingForced };
+        }
+        if (!best) break;
+        amounts.set(best.c.ticker, best.next.get(best.c.ticker));
+        qty.set(best.c.ticker, Math.round(((qty.get(best.c.ticker) || 0) + best.dq) * 10000) / 10000);
+        left[best.c.pool] -= best.chunk;
+        cur = evaluate(amounts, false, spreadK);
       }
-      if (!best) break;
-      amounts.set(best.c.ticker, best.next.get(best.c.ticker));
-      qty.set(best.c.ticker, Math.round(((qty.get(best.c.ticker) || 0) + best.dq) * 10000) / 10000);
-      left[best.c.pool] -= best.chunk;
-      cur = evaluate(amounts, false, spreadK);
     }
     return { amounts, qty, score: evaluate(amounts, true, spreadK) };
   };

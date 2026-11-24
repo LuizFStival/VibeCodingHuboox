@@ -908,8 +908,14 @@ function renderAporte() {
   const proposed = state.proposedKey === paramsKey;
   const proposeBtn = h('button', { class: 'btn primary', type: 'button', style: { 'font-size': '16px', 'min-height': '44px' }, onclick: () => { state.proposedKey = paramsKey; render(); document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }); } },
     proposed ? 'Propor de novo' : `Propor aporte de ${brl(aporte)}${Number(s.usdCash) > 0 ? ` + US$ ${num(s.usdCash)}` : ''}`);
+  const copyForAi = async () => {
+    const ok = await copyText(svc.reviewPromptFor('plan', state.month, { web: true, plan }));
+    toast(ok ? 'Proposta copiada (balanço, como cheguei nela e onde colocar o dinheiro). Cole no ChatGPT ou Gemini e traga a resposta para "Opinião final da IA".' : 'Não consegui copiar.');
+    document.getElementById('review-plan')?.scrollIntoView({ behavior: 'smooth' });
+  };
   const proposeCard = h('div', { class: 'card row' }, proposeBtn,
-    h('span', { class: 'muted small' }, state.proposedKey && !proposed ? 'Você mudou o valor ou a divisão: clique para recalcular a proposta.' : proposed ? 'Proposta abaixo. Mudou algo acima? Clique de novo.' : 'Escolha o perfil e o valor acima e clique para ver onde colocar o dinheiro.'));
+    proposed ? h('button', { class: 'btn', type: 'button', title: 'Copia o balanço usado, como o app chegou na proposta e onde colocar o dinheiro, com o pedido de opinião', onclick: copyForAi }, '📋 Copiar proposta para a IA') : null,
+    h('span', { class: 'muted small' }, state.proposedKey && !proposed ? 'Você mudou o valor ou a divisão: clique para recalcular a proposta.' : proposed ? 'Proposta abaixo. Para uma segunda opinião, copie para a IA e cole a resposta em "Opinião final da IA".' : 'Escolha o perfil e o valor acima e clique para ver onde colocar o dinheiro.'));
   if (!proposed) return [form, proposeCard, registeredCard(state.month)];
 
   const kpis = h('div', { class: 'grid kpis', id: 'plano' },
@@ -951,7 +957,7 @@ function renderAporte() {
   const classes = card('Classes: antes → depois', h('span', { class: 'muted small' }, 'traço = alvo'),
     bars(plan.classes.map((c) => ({ label: ASSET_TYPES[c.type].short, value: c.pctAfter, target: c.target, cls: `fill-${c.type}`, text: `${pct(c.pctBefore)} → ${pct(c.pctAfter)} (+${brl(c.added, 0)})` })), { max: 1 }));
 
-  const lines = plan.lines.length ? card('Proposta: onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
+  const lines = plan.lines.length ? card(svc.planOverrides(state.month).ai ? 'Proposta final (com a revisão da IA): onde colocar o dinheiro' : 'Proposta: onde colocar o dinheiro', h('span', { class: 'muted small' }, `${monthLong(state.month)}`),
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, ['Ativo', 'Classe / segmento', 'Na sua carteira', 'Recomendação', 'Preço', 'Comprar', 'Valor (R$)', '% do aporte', ''].map((x) => h('th', {}, x)))),
       h('tbody', {}, plan.lines.map((l) => h('tr', {},
@@ -970,8 +976,8 @@ function renderAporte() {
 
   const review = aiReviewCard('plan', {
     title: 'Opinião final da IA sobre o plano',
-    intro: 'Mande o plano inteiro (carteira, proposta e motivos) para a IA revisar como um analista e sugerir a versão final.',
-    plan,
+    intro: 'Mande o plano inteiro (balanço, como cheguei na proposta e onde colocar o dinheiro) para a IA revisar como um analista. Depois cole a resposta e clique em "Aplicar o retorno da IA e recalcular" para ter a versão final.',
+    plan, aporte,
   });
 
   const attention = plan.attentionItems?.length ? card(`Em atenção: não comprei agora (${plan.attentionItems.length})`, h('span', { class: 'muted small' }, 'a casa recomenda compra, mas a pesquisa pede para aguardar'),
@@ -991,7 +997,31 @@ function renderAporte() {
       ov.include.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Incluídos por você:'), ov.include.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `${t} ✕`))) : null,
       ov.exclude.length ? h('div', { class: 'row' }, h('span', { class: 'muted small' }, 'Tirados por você:'), ov.exclude.map((t) => h('button', { class: 'btn small', type: 'button', onclick: () => adjustPlan(t, 'reset') }, `desfazer ${t}`))) : null));
 
-  return [form, proposeCard, kpis, balance, notices, lines, adjust, attention, registerCard(plan, s), h('div', { class: 'grid two' }, classes, review)];
+  return [form, proposeCard, kpis, aiFinalCard(plan, ov), balance, notices, lines, review, adjust, attention, registerCard(plan, s), classes];
+}
+
+/** Versão final: o que a revisão da IA mudou na proposta, o que não deu para aplicar e por quê. */
+function aiFinalCard(plan, ov) {
+  const ai = ov.ai;
+  if (!ai) return null;
+  const now = plan.lines.map((l) => `${l.ticker} ${qtyFmt(l.qty)}`);
+  const before = (ai.before ?? []).map((b) => `${b.ticker} ${qtyFmt(b.qty)}`);
+  const why = (t) => plan.excludedItems?.find((x) => x.ticker === t)?.detail ?? 'não coube nas regras desta proposta';
+  const applied = []; const notApplied = [];
+  for (const t of ai.exclude ?? []) applied.push(`tirou ${t}`);
+  for (const t of ai.include ?? []) (plan.lines.some((l) => l.ticker === t) ? applied : notApplied).push(plan.lines.some((l) => l.ticker === t) ? `incluiu ${t}` : `${t}: ${why(t)}`);
+  const L = { acoes: 'ação', fiis: 'FII', internacional: 'internacional', etfAmplo: 'ETF amplo', setor: 'setor' };
+  for (const [k, v] of Object.entries(ai.limits ?? {})) applied.push(`limite por ${L[k] ?? k}: ${pct(v, 0)}`);
+  if (Number.isFinite(ai.maxNew)) applied.push(`até ${ai.maxNew} ativo(s) novo(s)`);
+  for (const t of ai.unknown ?? []) notApplied.push(`${t}: não está nas carteiras recomendadas deste mês nem na sua carteira`);
+  return card('Versão final: proposta recalculada com a revisão da IA', h('span', { class: 'muted small' }, `aplicada em ${new Date(ai.at).toLocaleString('pt-BR')}`),
+    h('div', { class: 'stack' },
+      ai.veredito === 'aprovar' && !applied.length ? h('p', {}, 'A IA aprovou a proposta sem mudanças.') : null,
+      applied.length ? h('p', {}, h('b', {}, 'Ajustes aplicados: '), applied.join(' · ')) : null,
+      notApplied.length ? h('p', {}, h('b', {}, 'Não aplicados (as regras do app continuam valendo): '), notApplied.join(' · ')) : null,
+      ai.motivos?.length ? h('details', {}, h('summary', { class: 'small' }, 'Motivos da IA'), h('ul', { class: 'small' }, ai.motivos.map((m) => h('li', {}, m)))) : null,
+      before.length ? h('p', { class: 'small' }, h('b', {}, 'Antes: '), before.join(', '), h('br'), h('b', {}, 'Agora: '), now.join(', ') || 'nenhuma compra') : null,
+      h('div', { class: 'row' }, confirmButton('Desfazer a revisão da IA', 'Clique de novo para voltar à proposta original', () => { svc.clearAiReview(state.month); state.keepProposal = true; toast('Voltei para a proposta original do app.'); render(); }, 'btn small'))));
 }
 
 const EXCLUDED_LABEL = {
@@ -1167,7 +1197,7 @@ function adjustPlan(ticker, action) {
  * Parecer da IA (ranking do mês, carteira ou plano): pedir ao Claude do painel (ou Gemini pela API)
  * ou copiar o pedido para o GPT/Gemini do site e colar a resposta. Fica salvo no mês.
  */
-function aiReviewCard(kind, { title, intro, plan }) {
+function aiReviewCard(kind, { title, intro, plan, aporte }) {
   const month = state.month;
   const note = svc.note(month, kind);
   const canAsk = EMBEDDED ? Boolean(claudeAI) : hasKey();
@@ -1195,8 +1225,23 @@ function aiReviewCard(kind, { title, intro, plan }) {
           h('div', { class: 'row' }, h('button', { class: 'btn small primary', type: 'button', onclick: () => {
             try { svc.saveNote(month, kind, paste.value, 'GPT/Gemini (copiar e colar)'); state.reviewPaste[kind] = ''; toast('Parecer salvo no histórico do mês.'); render(); }
             catch (e) { toast(e.message, true); }
-          } }, 'Salvar parecer'))))),
+          } }, 'Salvar parecer')))),
+      kind === 'plan' && plan ? h('div', { class: 'row' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => applyAiReturn(month, paste.value || note?.text || '', plan, aporte) }, 'Aplicar o retorno da IA e recalcular'),
+        h('span', { class: 'muted small' }, 'Lê os ajustes da resposta (tirar, incluir, limites, nº de novos), refaz a conta respeitando as regras e mostra a versão final no topo da proposta.')) : null),
     h('p', { class: 'muted small', style: { 'margin-top': '10px' } }, 'Ferramenta de apoio. Não é recomendação de investimento — a decisão final é sua.'));
+}
+
+function applyAiReturn(month, text, plan, aporte) {
+  if (!String(text).trim()) { toast('Cole a resposta da IA (ou peça ao Claude) antes de aplicar.', true); return; }
+  try {
+    if (state.reviewPaste.plan) { svc.saveNote(month, 'plan', state.reviewPaste.plan, 'GPT/Gemini (copiar e colar)'); state.reviewPaste.plan = ''; }
+    const ai = svc.applyAiReview(month, text, { amount: aporte, before: plan.lines.map((l) => ({ ticker: l.ticker, qty: l.qty })) });
+    state.keepProposal = true;
+    toast(ai.exclude.length || ai.include.length || Object.keys(ai.limits ?? {}).length || Number.isFinite(ai.maxNew) ? 'Retorno da IA aplicado: veja a versão final no topo da proposta.' : 'A IA aprovou a proposta: nada a mudar.');
+    render();
+    setTimeout(() => document.getElementById('plano')?.scrollIntoView({ behavior: 'smooth' }), 50);
+  } catch (e) { toast(e.message, true); }
 }
 
 // ---------- Configurações

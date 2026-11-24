@@ -6,7 +6,7 @@ import { EXTRACTION_SCHEMA, ANALYSIS_SCHEMA, extractionPrompt, manualExtractionP
 import { parseJsonLoose } from './gemini.js';
 import { comparePortfolio, planAporte, classifyTicker, buildUniverse } from './portfolio.js';
 import { buildRanking } from './ranking.js';
-import { rankingReviewPrompt, portfolioReviewPrompt, planReviewPrompt } from './prompts.js';
+import { rankingReviewPrompt, portfolioReviewPrompt, planReviewPrompt, parseAiAdjustments } from './prompts.js';
 
 const CHUNK = 5; // ativos por chamada de análise (respostas menores = menos cortes)
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -309,7 +309,7 @@ export function createService(store) {
       const today = todayISO();
       if (kind === 'ranking') return rankingReviewPrompt({ month, ranking, today, web });
       if (kind === 'portfolio') return portfolioReviewPrompt({ month, cmp: this.compare(month), ranking, today, web });
-      if (kind === 'plan') return planReviewPrompt({ plan, cmp: this.compare(month), ranking, today, web });
+      if (kind === 'plan') return planReviewPrompt({ plan, cmp: this.compare(month), ranking, today, web, month });
       throw new Error(`Parecer desconhecido: ${kind}`);
     },
     async askReview(ai, kind, month, { plan, onStatus, signal } = {}) {
@@ -396,14 +396,20 @@ export function createService(store) {
     },
     plan(month, amount) {
       const ov = d().settings.planOverrides?.[month] ?? {};
-      return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month), settings: { ...d().settings, include: ov.include ?? [], exclude: ov.exclude ?? [] } });
+      const ai = ov.ai ?? {};
+      // ajustes manuais (✕ tirar / + incluir) e, por cima, os da revisão da IA aplicada
+      const exclude = [...new Set([...(ov.exclude ?? []), ...(ai.exclude ?? [])])].filter((t) => !(ov.include ?? []).includes(t));
+      const include = [...new Set([...(ov.include ?? []), ...(ai.include ?? [])])].filter((t) => !exclude.includes(t));
+      const s = d().settings;
+      return planAporte({ amount, holdings: d().holdings, reports: reportsFor(month), analyses: analysesFor(month),
+        settings: { ...s, include, exclude, limits: { ...(s.limits ?? {}), ...(ai.limits ?? {}) }, maxNew: ai.maxNew ?? s.maxNew } });
     },
     /** Ajuste manual da proposta do mês: tirar ou incluir um ativo (ex.: aplicar a sugestão da IA). */
     planOverrides: (month) => d().settings.planOverrides?.[month] ?? { include: [], exclude: [] },
     togglePlan(month, ticker, action) {
       store.update((data) => {
         const all = { ...(data.settings.planOverrides ?? {}) };
-        const ov = { include: [...(all[month]?.include ?? [])], exclude: [...(all[month]?.exclude ?? [])] };
+        const ov = { ...(all[month] ?? {}), include: [...(all[month]?.include ?? [])], exclude: [...(all[month]?.exclude ?? [])] };
         const drop = (k) => { ov[k] = ov[k].filter((t) => t !== ticker); };
         if (action === 'exclude') { drop('include'); ov.exclude.push(ticker); }
         else if (action === 'include') { drop('exclude'); ov.include.push(ticker); }
@@ -412,6 +418,36 @@ export function createService(store) {
         data.settings = { ...data.settings, planOverrides: all };
       });
     },
+    /**
+     * Aplica o retorno da IA sobre a proposta (tirar/incluir ativos, limites, nº de novos) só neste
+     * mês e guarda o "antes" para comparar. As regras continuam valendo: o que a IA sugerir e não
+     * passar nelas (aguardar, teto, limites) aparece como "não aplicado" com o motivo.
+     */
+    applyAiReview(month, text, { amount, before = [] } = {}) {
+      const adj = parseAiAdjustments(text);
+      if (!adj) throw new Error('Não encontrei ajustes na resposta. Peça à IA para terminar com o bloco JSON do pedido (ou frases como "trocar X por Y").');
+      const known = new Set([...reportsFor(month).flatMap((r) => r.assets.map((a) => a.ticker)), ...d().holdings.map((h) => h.ticker)]);
+      const unknown = [...adj.tirar, ...adj.incluir].filter((t) => !known.has(t));
+      const ai = {
+        exclude: adj.tirar.filter((t) => known.has(t)), include: adj.incluir.filter((t) => known.has(t)),
+        limits: adj.limites, maxNew: adj.maxNovos ?? undefined, motivos: adj.motivos, veredito: adj.veredito,
+        unknown, source: adj.source, at: new Date().toISOString(), amount, before,
+      };
+      store.update((data) => {
+        const all = { ...(data.settings.planOverrides ?? {}) };
+        all[month] = { include: [], exclude: [], ...(all[month] ?? {}), ai };
+        data.settings = { ...data.settings, planOverrides: all };
+      });
+      return ai;
+    },
+    clearAiReview(month) {
+      store.update((data) => {
+        const all = { ...(data.settings.planOverrides ?? {}) };
+        if (all[month]) { const { ai, ...rest } = all[month]; all[month] = rest; }
+        data.settings = { ...data.settings, planOverrides: all };
+      });
+    },
+
     /** Segmento de cada posição (do relatório do mês; senão o informado na posição). */
     segmentOf(month, ticker) {
       const h = d().holdings.find((x) => x.ticker === ticker);

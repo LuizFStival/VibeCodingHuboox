@@ -328,29 +328,104 @@ export function portfolioReviewPrompt({ month, cmp, ranking, today, web = false 
   ].join('\n');
 }
 
-export function planReviewPrompt({ plan, cmp, ranking, today, web = false }) {
+const pctTxt = (x, d = 1) => `${(x * 100).toFixed(d).replace('.', ',')}%`;
+const brl2 = (v) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Resumo da proposta em texto: o balanço usado, como o app chegou nela e onde colocar o dinheiro
+ * (com o porquê de cada compra). É o que vai para a IA revisar.
+ */
+export function planSummaryText(plan, { month } = {}) {
+  const L = plan.limits ?? {};
+  const out = [];
+  out.push(`PROPOSTA DE APORTE${month ? ` · ${month}` : ''}`);
+  out.push('', '1) BALANÇO USADO');
+  out.push(`Patrimônio da carteira ${brl2(plan.totalBefore)} + aporte ${brl2(plan.brlAmount ?? plan.amount)} = projetado ${brl2(plan.totalAfter)}. Compras: ${brl2(plan.invested)}; sobra em caixa: ${brl2(plan.brlLeftover ?? plan.leftover)}.`);
+  if (plan.reservedBefore > 0.5) out.push(`Inclui ${brl2(plan.reservedBefore)} já separados para o internacional (dólar na corretora/caixinha do dólar).`);
+  for (const c of plan.classes) out.push(`- ${c.label}: ${pctTxt(c.pctBefore)} → ${pctTxt(c.pctAfter)} (alvo ${pctTxt(c.target, 0)}); hoje ${brl2(c.before)}, recebe ${brl2(c.added)}.`);
+  out.push('', '2) COMO O APP CHEGOU NESSA PROPOSTA');
+  out.push(`Simulou ${plan.combosTried ?? '—'} combinações e escolheu a que deixa a carteira mais perto das metas por classe, com ativos de melhor qualidade/menor risco segundo a pesquisa, sem passar dos limites de concentração: por ativo — ação ${pctTxt(L.acoes ?? 0.15, 0)}, FII ${pctTxt(L.fiis ?? 0.12, 0)}, internacional ${pctTxt(L.internacional ?? 0.2, 0)}, ETF amplo ${pctTxt(L.etfAmplo ?? 0.4, 0)}; por setor ${pctTxt(L.setor ?? 0.2, 0)} (ativos do mesmo setor somam juntos). Nunca compra AGUARDAR da casa, acima do teto ou onde a pesquisa da IA discorda/pede para aguardar.`);
+  for (const w of plan.warnings ?? []) out.push(`- ${w}`);
+  if (plan.onlyOwned) out.push(`- Só reforçando o que o investidor já tem: ${plan.onlyOwned.buys.map((b) => `${b.ticker} ${b.qty}`).join(', ') || 'nada caberia'} (${brl2(plan.onlyOwned.invested)}, sobrando ${brl2(plan.onlyOwned.leftover)}).`);
+  if (plan.excludedItems?.length) {
+    out.push('Ficaram de fora:');
+    const groups = new Map();
+    for (const x of plan.excludedItems) { if (!groups.has(x.category)) groups.set(x.category, []); groups.get(x.category).push(x); }
+    for (const xs of groups.values()) out.push(`- ${xs.map((x) => `${x.ticker} (${x.detail})`).join('; ')}`);
+  }
+  out.push('', '3) ONDE COLOCAR O DINHEIRO');
+  if (!plan.lines.length) out.push('Nenhuma compra nesta proposta.');
+  for (const l of plan.lines) {
+    out.push(`- ${l.ticker} · ${ASSET_TYPES[l.type]?.short ?? l.type} · ${l.sector ?? l.segment ?? ''} · ${l.ownedQty ? `reforço (tem ${l.ownedQty})` : 'NOVO'}: ${l.qty} ${l.fractional ? 'un.' : l.qty === 1 ? 'cota' : 'cotas'} × ${brl2(l.unitBRL)} = ${brl2(l.amount)}`);
+    if (l.why) {
+      out.push(`  motivo: ${l.why.motivo}`);
+      out.push(`  peso na classe: ${l.why.peso} · setor: ${l.why.setor}`);
+      if (l.why.alternativa) out.push(`  por que não reforçar o que já tem: ${l.why.alternativa}`);
+      out.push(`  fundamento: ${l.why.fundamento} · principal risco: ${l.why.risco}`);
+    }
+  }
+  return out.join('\n');
+}
+
+/** Formato da resposta que o app consegue aplicar sozinho (fim da resposta da IA). */
+export const AI_ADJUST_FORMAT = { veredito: 'aprovar | ajustar', tirar: ['TICKER'], incluir: ['TICKER'], limites: { acao: 15, fii: 12, internacional: 20, etfAmplo: 40, setor: 20 }, maxNovos: 2, motivos: ['frase curta por ajuste'] };
+
+export function planReviewPrompt({ plan, cmp, ranking, today, web = false, month }) {
   const byTicker = new Map(ranking.map((r) => [r.ticker, r]));
   return [
     `Hoje é ${today}. Você é um analista de investimentos revisando o plano de aporte do mês de um investidor pessoa física.`,
     webLine(web),
-    `Patrimônio atual: ${brlTxt(plan.totalBefore ?? cmp.total)}. Aporte: ${brlTxt(plan.brlAmount ?? plan.amount)} em reais.${plan.usdCash > 0 ? ` Já há US$ ${plan.usdCash.toFixed(2)} parados na corretora no exterior (≈ ${brlTxt(plan.usdCashBRL)}), que compram internacional sem nova remessa.` : ''}${plan.minRemit > 0 ? ` O envio para o exterior tem mínimo de US$ ${plan.minRemit}; abaixo disso a parte do internacional junta numa caixinha em reais${plan.reserve > 0 ? ` (hoje com ${brlTxt(plan.reserve)})` : ''}.` : ''}${plan.remitNow ? ` Neste mês a caixinha passou do mínimo: enviar ${brlTxt(plan.remitted)} ao exterior.` : plan.toReserve > 0.5 ? ` Neste mês ${brlTxt(plan.toReserve)} vão para a caixinha (fica com ${brlTxt(plan.reserveAfter)}).` : ''}`,
-    `Classes (antes → depois → alvo): ${plan.classes.map((c) => `${c.label} ${(c.pctBefore * 100).toFixed(1)}% → ${(c.pctAfter * 100).toFixed(1)}% → ${(c.target * 100).toFixed(0)}%`).join(' · ')}`,
-    'Compras propostas:',
-    plan.lines.map((l) => { const rk = byTicker.get(l.ticker); return `${l.ticker} [${l.segment ?? '?'}${l.ownedQty ? `, já tem ${l.ownedQty}` : ', NOVO'}]: ${l.qty} ${l.fractional ? 'un.' : 'cotas'} ≈ ${brlTxt(l.amount)} · nota ${rk?.score ?? '—'} · ${l.reason}${l.why ? ` · peso ${l.why.peso} · ${l.why.setor} · risco: ${l.why.risco}` : ''}${rk?.an?.summary ? ` — pesquisa: ${rk.an.summary.slice(0, 160)}` : ''}`; }).join('\n'),
-    plan.limits ? `Limites de concentração usados (fração da classe): ação ${plan.limits.acoes}, FII ${plan.limits.fiis}, internacional ${plan.limits.internacional}, ETF amplo ${plan.limits.etfAmplo}, setor ${plan.limits.setor}.` : '',
-    plan.excludedItems?.length ? `Ficaram de fora (motivo): ${plan.excludedItems.slice(0, 25).map((x) => `${x.ticker} (${x.detail})`).join('; ')}` : '',
-    plan.warnings.length ? `Observações do cálculo:\n${plan.warnings.map((w) => `- ${w}`).join('\n')}` : '',
-    'Carteira atual por classe e segmento:',
+    '',
+    planSummaryText(plan, { month }),
+    '',
+    'CARTEIRA ATUAL (por classe e setor):',
     ...['acoes', 'fiis', 'internacional'].map((t) => {
       const rs = cmp.rows.filter((r) => r.type === t);
       return `${ASSET_TYPES[t].short}: ${rs.length ? rs.map((r) => `${r.ticker} [${r.segment ?? '?'}${r.frozen && !byTicker.has(r.ticker) ? ', congelado: antigo, fora do relatório, não sugerir aporte' : ''}] ${brlTxt(r.value)}`).join(', ') : 'nenhum'}`;
     }),
     '',
-    'Revise o plano como um analista, considerando:',
-    '- Diversificação por SEGMENTO dentro de cada classe (ex.: logístico, papel, lajes nos FIIs): o aporte deve ir para segmentos abaixo do peso.',
-    '- Preferir REFORÇAR posições que o investidor já tem e que estão boas, antes de abrir posições novas; com patrimônio pequeno, muitas posições pequenas atrapalham. Justifique cada posição nova versus reforçar uma existente do mesmo segmento.',
-    '- Qualidade, porte e liquidez do ativo, não só DY e desconto.',
-    'Responda: 1) o plano faz sentido? 2) trocaria algum ativo? Diga exatamente "trocar X por Y" e por quê; 3) riscos de concentração ou de momento; 4) versão final (ativo, quantidade, valor).',
+    'Revise o plano como um analista: diversificação por setor dentro de cada classe; preferir reforçar posições boas que o investidor já tem antes de abrir novas (justifique cada posição nova); qualidade, porte, liquidez e sustentabilidade dos dividendos, não só DY e desconto; riscos de concentração ou de momento.',
+    'Responda: 1) o plano faz sentido? 2) trocaria algum ativo? (só ativos das carteiras recomendadas do mês, em COMPRAR e abaixo do teto) 3) mudaria algum limite? 4) principais riscos.',
+    'Para o app recalcular sozinho, TERMINE a resposta com um bloco ```json neste formato (listas vazias se não houver mudança; em "limites" e "maxNovos" só o que quiser mudar, em %):',
+    JSON.stringify(AI_ADJUST_FORMAT),
     close,
-  ].filter(Boolean).join('\n');
+  ].filter((x) => x !== null && x !== undefined).join('\n');
+}
+
+/**
+ * Lê os ajustes da resposta da IA: o bloco JSON do fim (preferido) ou, sem ele, frases como
+ * "trocar X por Y", "tirar X", "incluir Y". Devolve null se não achar nada aplicável.
+ */
+export function parseAiAdjustments(text) {
+  const raw = String(text ?? '');
+  const T = (x) => normalizeTicker(x);
+  const list = (v) => (Array.isArray(v) ? v : typeof v === 'string' && v ? v.split(/[,;\s]+/) : []).map(T).filter((t) => /^[A-Z0-9]{2,7}$/.test(t));
+  let json = null;
+  const blocks = [...raw.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((m) => m[1]);
+  for (const b of blocks.reverse()) { try { const j = JSON.parse(b); if (j && typeof j === 'object') { json = j; break; } } catch { /* tenta o próximo */ } }
+  if (!json) { const m = raw.match(/\{[^{}]*"(tirar|incluir|limites|maxNovos)"[\s\S]*\}/); if (m) { try { json = JSON.parse(m[0]); } catch { /* sem JSON */ } } }
+  const adj = { tirar: [], incluir: [], limites: {}, maxNovos: null, motivos: [], veredito: null, source: json ? 'json' : 'texto' };
+  if (json) {
+    adj.tirar = list(json.tirar ?? json.remover ?? json.excluir);
+    adj.incluir = list(json.incluir ?? json.adicionar);
+    const lim = json.limites ?? {};
+    const keys = { acao: 'acoes', acoes: 'acoes', fii: 'fiis', fiis: 'fiis', internacional: 'internacional', etfAmplo: 'etfAmplo', etf: 'etfAmplo', setor: 'setor' };
+    for (const [k, v] of Object.entries(lim)) {
+      const key = keys[k]; const n = parseNumber(v);
+      if (key && Number.isFinite(n) && n > 0) adj.limites[key] = Math.min(1, n > 1 ? n / 100 : n);
+    }
+    const mx = parseNumber(json.maxNovos);
+    if (Number.isFinite(mx) && mx >= 0) adj.maxNovos = Math.min(10, Math.round(mx));
+    adj.motivos = (Array.isArray(json.motivos) ? json.motivos : []).map((x) => String(x).slice(0, 240)).slice(0, 10);
+    adj.veredito = /ajust/i.test(json.veredito) ? 'ajustar' : /aprov/i.test(json.veredito) ? 'aprovar' : null;
+  } else {
+    // tickers em MAIÚSCULAS (para "trocar o plano por..." não virar ticker "PLANO")
+    const TK = '([A-Z]{4}\\d{1,2}|[A-Z]{1,5})';
+    for (const m of raw.matchAll(new RegExp(`[Tt]roc\\w*\\s+(?:o\\s+|a\\s+)?${TK}\\s+(?:por|pelo|pela)\\s+(?:o\\s+|a\\s+)?${TK}\\b`, 'g'))) { adj.tirar.push(T(m[1])); adj.incluir.push(T(m[2])); }
+    for (const m of raw.matchAll(new RegExp(`(?:[Tt]irar|[Rr]emover|[Ee]xcluir)\\s+(?:o\\s+|a\\s+)?${TK}\\b`, 'g'))) adj.tirar.push(T(m[1]));
+    for (const m of raw.matchAll(new RegExp(`(?:[Ii]ncluir|[Aa]dicionar)\\s+(?:o\\s+|a\\s+)?${TK}\\b`, 'g'))) adj.incluir.push(T(m[1]));
+  }
+  adj.tirar = [...new Set(adj.tirar)]; adj.incluir = [...new Set(adj.incluir)].filter((t) => !adj.tirar.includes(t));
+  const has = adj.tirar.length || adj.incluir.length || Object.keys(adj.limites).length || adj.maxNovos !== null;
+  return has || adj.veredito === 'aprovar' ? adj : null;
 }

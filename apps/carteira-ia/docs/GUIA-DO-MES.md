@@ -27,7 +27,7 @@ Aba **4 · Aporte**:
 2. Atualize o **Dólar (R$)** com a cotação da corretora, o **Dólar já na corretora (US$)** e a **Caixinha do dólar (R$)**.
 3. Clique em **Propor aporte**. Leia "Como cheguei nessa proposta".
 4. Quer trocar um ativo (ex.: a IA sugeriu outro)? Use **✕ tirar** e **+ incluir**.
-5. Opcional: **Opinião final da IA** (copie para o GPT revisar o plano todo).
+5. Opcional, segunda opinião: **📋 Copiar proposta para a IA** (vai o balanço, como o app chegou na proposta e onde colocar o dinheiro), cole no ChatGPT/Gemini e traga a resposta para **Opinião final da IA**. Clique em **Aplicar o retorno da IA e recalcular**: o app aplica as trocas e limites sugeridos (sem quebrar as regras) e mostra a **versão final** no topo, com o antes e depois. **Desfazer a revisão da IA** volta à proposta original.
 
 Se o cartão mostrar **Guardar na caixinha do dólar**, separe esse valor em reais; se mostrar **Enviar ao exterior**, mande o valor para a corretora antes de comprar o internacional.
 

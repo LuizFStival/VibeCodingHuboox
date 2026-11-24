@@ -877,3 +877,39 @@ test('novo × reforço: mostra a alternativa só com o que já tem e explica o a
   const zero = planAporte({ amount: 450, holdings, reports, analyses, settings: { ...settings, maxNew: 0 } });
   assert.equal(zero.onlyOwned, null);
 });
+
+import { parseAiAdjustments, planSummaryText } from '../public/core/prompts.js';
+
+test('retorno da IA: lê o bloco JSON ou frases "trocar X por Y"', () => {
+  const j = parseAiAdjustments('Análise...\n```json\n{"veredito":"ajustar","tirar":["prio3"],"incluir":["PETR4"],"limites":{"setor":15,"fii":0.1},"maxNovos":1,"motivos":["duas petroleiras"]}\n```');
+  assert.deepEqual([j.tirar, j.incluir, j.limites, j.maxNovos, j.veredito, j.source], [['PRIO3'], ['PETR4'], { setor: 0.15, fiis: 0.1 }, 1, 'ajustar', 'json']);
+  const t = parseAiAdjustments('Eu trocaria: trocar PRIO3 por PETR4. Também tirar CMIG4. Não vou trocar o plano por outro.');
+  assert.deepEqual([t.tirar, t.incluir, t.source], [['PRIO3', 'CMIG4'], ['PETR4'], 'texto']);
+  assert.equal(parseAiAdjustments('Está ótimo, sem comentários.'), null);
+  assert.equal(parseAiAdjustments('```json\n{"veredito":"aprovar","tirar":[],"incluir":[]}\n```').veredito, 'aprovar');
+});
+
+test('retorno da IA: recalcula a proposta com os ajustes, mantém as regras e dá para desfazer', () => {
+  const { reports, analyses, holdings, settings } = novCenario();
+  const svc = createService(createStore(memoryStorage()));
+  for (const r of reports) svc.importReportJson({ ...r, assets: r.assets.map((a) => ({ ticker: a.ticker, segment: a.segment, allocationPct: a.weight * 100, price: a.price, ceilingPrice: a.ceiling, recommendation: a.rec })) });
+  for (const h of holdings) svc.upsertHolding(h);
+  svc.updateSettings({ ...settings, requireResearch: false });
+  const plan0 = svc.plan('2026-11', 450);
+  const sum = planSummaryText(plan0, { month: '2026-11' });
+  assert.match(sum, /BALANÇO USADO/); assert.match(sum, /COMO O APP CHEGOU/); assert.match(sum, /ONDE COLOCAR O DINHEIRO/);
+  assert.match(svc.reviewPromptFor('plan', '2026-11', { web: true, plan: plan0 }), /```json/);
+  const first = plan0.lines[0]?.ticker;
+  assert.ok(first);
+  const ai = svc.applyAiReview('2026-11', `\`\`\`json\n{"tirar":["${first}"],"incluir":["ITUB3","ZZZZ3"],"limites":{"setor":15}}\n\`\`\``, { amount: 450, before: plan0.lines.map((l) => ({ ticker: l.ticker, qty: l.qty })) });
+  assert.deepEqual(ai.exclude, [first]);
+  assert.deepEqual(ai.unknown, ['ZZZZ3'], 'ticker fora das carteiras não é aplicado');
+  const plan1 = svc.plan('2026-11', 450);
+  assert.ok(!plan1.lines.some((l) => l.ticker === first), 'a IA tirou');
+  assert.ok(!plan1.lines.some((l) => l.ticker === 'ITUB3'), 'AGUARDAR da casa continua fora mesmo com a IA pedindo');
+  assert.equal(plan1.limits.setor, 0.15, 'limite da IA vale só neste mês');
+  assert.equal(svc.settings().limits.setor, 0.2, 'configuração geral não muda');
+  svc.clearAiReview('2026-11');
+  assert.deepEqual(svc.plan('2026-11', 450).lines.map((l) => l.ticker), plan0.lines.map((l) => l.ticker));
+  assert.throws(() => svc.applyAiReview('2026-11', 'gostei'), /Não encontrei ajustes/);
+});
