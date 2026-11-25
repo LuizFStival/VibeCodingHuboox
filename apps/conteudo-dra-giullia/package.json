@@ -1,0 +1,16 @@
+{
+  "name": "conteudo-dra-giullia",
+  "version": "1.0.0",
+  "description": "Máquina de conteúdo do Instagram da Dra. Giullia Campioni: base de marca, instruções das máquinas (pauta, copy, revisão CFO, arte) e templates que geram os PNGs.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "render": "node scripts/render.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

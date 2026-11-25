@@ -1,0 +1,75 @@
+/* Identidade visual da Dra. Giullia Campioni. Fonte: marca/05-identidade-visual.md
+   Cores e fontes mudam SÓ aqui. */
+:root{
+  --tinta:#16323F; --petroleo:#22729C; --ceu:#E7F3FA; --gelo:#F8FBFD;
+  --rosa:#E8879E; --rosa-claro:#FBE9EE;
+  --amarelo:#F7E3A1; --verde:#CFE6D3; --laranja:#F6C9A8; --lilas:#DCD3F0;
+  --titulo:"Fraunces", Georgia, serif;
+  --texto:"Manrope", "Helvetica Neue", Arial, sans-serif;
+  --pad:96px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ccc;font-family:var(--texto);color:var(--tinta)}
+
+.slide{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--gelo);display:flex;flex-direction:column;padding:var(--pad)}
+.slide.stories{height:1920px;padding-top:250px;padding-bottom:250px}
+.slide + .slide{margin-top:40px}
+
+/* manchas orgânicas */
+.blob{position:absolute;z-index:0;pointer-events:none}
+.b1{width:760px;height:700px;right:-260px;top:-240px;background:var(--ceu);border-radius:62% 38% 55% 45% / 48% 60% 40% 52%}
+.b2{width:340px;height:320px;left:-120px;bottom:-110px;background:var(--rosa-claro);border-radius:45% 55% 38% 62% / 55% 42% 58% 45%}
+.b3{width:120px;height:120px;right:150px;bottom:260px;border:3px solid var(--rosa);border-radius:58% 42% 50% 50% / 46% 55% 45% 54%;opacity:.55}
+.alt .b1{right:auto;left:-300px;top:auto;bottom:-300px}
+.alt .b2{left:auto;right:-110px;bottom:auto;top:-120px;background:var(--ceu)}
+.alt .b3{right:120px;bottom:auto;top:120px}
+
+.conteudo{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;justify-content:center;gap:36px;min-height:0;overflow:hidden}
+
+.sobretitulo{display:flex;align-items:center;gap:18px;font-size:26px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--petroleo)}
+.sobretitulo::before{content:"";width:44px;height:3px;background:var(--rosa);border-radius:2px}
+
+h1,h2{font-family:var(--titulo);font-weight:600;color:var(--tinta);letter-spacing:-.01em}
+h1{font-size:120px;line-height:1.02}
+h2{font-size:74px;line-height:1.08}
+em{font-style:italic;color:var(--petroleo);font-weight:500;position:relative;white-space:nowrap}
+em::after{content:"";position:absolute;left:2%;right:2%;bottom:.04em;height:.14em;background:var(--rosa);opacity:.45;border-radius:99px;z-index:-1}
+p.texto{font-size:42px;line-height:1.45;color:var(--tinta);max-width:860px}
+p.sub{font-size:36px;line-height:1.4;color:var(--petroleo);font-weight:500}
+
+.pill{align-self:flex-start;display:inline-flex;align-items:center;gap:14px;font-size:30px;font-weight:700;border-radius:999px;padding:18px 34px;background:var(--petroleo);color:#fff}
+
+/* capa */
+.capa h1{max-width:900px}
+.capa .foto{position:relative;z-index:1;width:100%;height:560px;border-radius:48% 52% 40% 60% / 30% 34% 66% 70%;overflow:hidden;margin-bottom:8px}
+.capa .foto img{width:100%;height:100%;object-fit:cover}
+.capa.com-foto h1{font-size:92px}
+
+/* mito ou verdade */
+.veredito{align-self:flex-start;font-size:40px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;padding:16px 40px;border-radius:999px}
+.v-mito{background:var(--rosa-claro);color:#B2445F;border:3px solid var(--rosa)}
+.v-verdade{background:var(--verde);color:#2E6B45;border:3px solid #8FC29C}
+.v-depende{background:var(--amarelo);color:#7A5B12;border:3px solid #E6C866}
+.afirmacao{font-family:var(--titulo);font-size:72px;line-height:1.14;font-weight:500;color:var(--tinta)}
+.afirmacao::before{content:"“";color:var(--rosa)} .afirmacao::after{content:"”";color:var(--rosa)}
+.mito p.texto{border-left:4px solid var(--ceu);padding-left:32px}
+
+/* lista */
+ul.itens{list-style:none;display:grid;gap:26px}
+ul.itens li{display:flex;gap:26px;align-items:flex-start;font-size:40px;line-height:1.38}
+ul.itens li::before{content:"";flex:none;width:22px;height:22px;margin-top:.45em;border-radius:50%;background:var(--rosa)}
+
+/* final */
+.final{background:var(--petroleo)}
+.final .b1{background:rgba(255,255,255,.08)} .final .b2{background:rgba(232,135,158,.28)} .final .b3{border-color:#fff;opacity:.3}
+.final h2,.final p.texto{color:#fff}
+.final em{color:var(--rosa-claro)}
+.final .sobretitulo{color:var(--rosa-claro)}
+.final .pill{background:#fff;color:var(--petroleo)}
+
+/* rodapé */
+.rodape{position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;padding-top:40px}
+.rodape img{height:46px;width:auto;opacity:.9}
+.contador{font-size:24px;font-weight:700;letter-spacing:.1em;color:var(--petroleo);font-variant-numeric:tabular-nums}
+.final .contador{color:#fff}
+.arraste{font-size:24px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--petroleo);display:flex;align-items:center;gap:12px}

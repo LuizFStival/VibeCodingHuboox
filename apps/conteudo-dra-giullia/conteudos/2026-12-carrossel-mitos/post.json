@@ -1,0 +1,59 @@
+{
+  "id": "2026-12-mitos-dentes-de-leite",
+  "formato": "carrossel",
+  "pilar": "Educação e prevenção",
+  "validar_com_giullia": true,
+  "status": "rascunho para aprovação",
+  "slides": [
+    {
+      "tipo": "capa",
+      "sobretitulo": "Mito ou verdade",
+      "titulo": "5 mitos sobre os *dentinhos* de leite",
+      "subtitulo": "Qual destes você já ouviu por aí?"
+    },
+    {
+      "tipo": "mito",
+      "sobretitulo": "Mito 1",
+      "afirmacao": "Meu filho já sabe escovar os dentes sozinho.",
+      "veredito": "Mito",
+      "explicacao": "Os pequenos ainda não têm coordenação motora fina para uma escovação completa. Até por volta dos 7 ou 8 anos, os pais escovam ou fazem aquela *revisão* no final."
+    },
+    {
+      "tipo": "mito",
+      "sobretitulo": "Mito 2",
+      "afirmacao": "O nascimento dos dentes causa febre e diarreia.",
+      "veredito": "Mito",
+      "explicacao": "Gengiva coçando, mais saliva e irritação são comuns. Febre alta e diarreia não são causadas pelo dentinho e merecem avaliação do pediatra."
+    },
+    {
+      "tipo": "mito",
+      "sobretitulo": "Mito 3",
+      "afirmacao": "Dente de leite cai fácil porque não tem raiz.",
+      "veredito": "Mito",
+      "explicacao": "Dente de leite tem raiz, sim! Ela vai sendo reabsorvida aos poucos, conforme o dente permanente se aproxima para nascer."
+    },
+    {
+      "tipo": "mito",
+      "sobretitulo": "Mito 4",
+      "afirmacao": "Se tem cárie, é melhor arrancar. Ele vai cair mesmo.",
+      "veredito": "Mito",
+      "explicacao": "O dente de leite guarda o espaço do permanente e ajuda na mastigação e na fala. Quando possível, tratar é o melhor caminho para o *sorriso* que vem aí."
+    },
+    {
+      "tipo": "mito",
+      "sobretitulo": "Mito 5",
+      "afirmacao": "Uma consulta por ano já é suficiente.",
+      "veredito": "Depende",
+      "explicacao": "O intervalo é definido na consulta, de acordo com cada criança. Para muitos pequenos, o ideal é voltar a cada 4 meses, para cuidar antes de precisar tratar."
+    },
+    {
+      "tipo": "final",
+      "sobretitulo": "Grandes hábitos",
+      "titulo": "Informação também é *cuidado*",
+      "texto": "Salve este post e compartilhe com quem tem um pequeno em casa.",
+      "cta": "Ficou com dúvida? Me conta nos comentários"
+    }
+  ],
+  "legenda": "Quantos destes você já ouviu por aí? 💗\n\nNo consultório, essas frases aparecem toda semana, e é muito natural! Muitas delas passam de geração em geração.\n\nMas cada mito desses pode atrasar um cuidado importante. Os dentinhos de leite são fundamentais para a mastigação, a fala e para guardar o espaço dos dentes permanentes.\n\nCada pequeno tem a sua história, por isso a avaliação é sempre individual ✨\n\nDra. Giullia Campioni | CRO-PR 39945",
+  "hashtags": ["#odontopediatriacuritiba", "#dentistacuritiba", "#dentedeleite", "#saudebucalinfantil", "#maternidade", "#mitoouverdade", "#dentistadafamilia"]
+}
