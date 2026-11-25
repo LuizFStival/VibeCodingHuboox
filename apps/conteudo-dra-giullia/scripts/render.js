@@ -42,8 +42,8 @@ const page = await browser.newPage({ viewport: { width: 1200, height: 1400 }, de
 await page.goto(url(htmlPath), { waitUntil: "networkidle" });
 await page.evaluate(() => document.fonts.ready);
 
-const faltaFonte = await page.evaluate(() => !document.fonts.check('600 40px "Fraunces"') || !document.fonts.check('400 40px "Manrope"'));
-if (faltaFonte) console.warn("Aviso: as fontes Fraunces/Manrope não carregaram (sem internet?). As artes sairiam com fonte substituta.");
+const faltaFonte = await page.evaluate(() => !document.fonts.check('600 40px "Fraunces"') || !document.fonts.check('400 40px "Karla"'));
+if (faltaFonte) console.warn("Aviso: as fontes Fraunces/Karla não carregaram (sem internet?). As artes sairiam com fonte substituta.");
 
 const estouros = await page.$$eval(".slide .conteudo", (els) => els.map((el, i) => (el.scrollHeight > el.clientHeight + 2 ? i + 1 : null)).filter(Boolean));
 

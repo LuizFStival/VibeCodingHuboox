@@ -7,29 +7,33 @@
 - Versões recortadas para as artes: `assets/logo-preto-recortado.png` e `assets/logo-branco-recortado.png`
 - Composição: **DRA. GIULLIA CAMPIONI** em caixa alta bem espaçada, com **ODONTOLOGIA | CRO-PR 39945** embaixo. O logo já leva o CRO, o que resolve a exigência de identificação nas artes.
 
-## Paleta
-| Papel | Cor | HEX |
+## Paleta (tokens reais do site dragiucampioni.com.br)
+| Token | Papel | HEX |
 |---|---|---|
-| Texto principal | Azul-tinta | `#16323F` |
-| Primária / destaque | Azul-petróleo | `#22729C` |
-| Fundo claro | Azul-céu | `#E7F3FA` |
-| Fundo neutro | Branco gelo | `#F8FBFD` |
-| Afeto / detalhe | Rosa suave | `#E8879E` |
-| Rosa fundo | Rosa claro | `#FBE9EE` |
+| tinta | Títulos | `#14313A` |
+| texto | Texto corrido | `#284956` |
+| suave | Rótulos e legendas | `#4F6D79` |
+| petroleo | Primária: botões, sobretítulos, destaque, fundo do slide final | `#227AA8` |
+| azul | Detalhes e ícones (não usar em texto) | `#3BAFE0` |
+| ceu / ceu-forte / linha | Manchas, fundos e divisórias | `#EAF7FF` / `#B8DFF5` / `#CBE8F7` |
+| papel | Fundo das artes | `#F8FBFC` |
+| rosa / rosa-claro | Assinatura afetiva (nunca em texto) | `#F0A6B8` / `#F8DDE4` |
+| vinho | Resposta "É mito." | `#8A3A55` |
+| mel | Detalhe de datas comemorativas | `#FFD56E` |
 
-**Complementares (só em detalhes, quando precisar):** amarelo pastel `#F7E3A1` · verde suave `#CFE6D3` · laranja suave `#F6C9A8` · lilás `#DCD3F0`
-
-## Tipografia
-- **Títulos:** serifada elegante (Fraunces, 500 a 600)
-- **Textos:** sem serifa limpa e arredondada (Manrope, 400 a 700)
-- Fontes delicadas e fáceis de ler
+## Tipografia (igual ao site)
+- **Títulos:** Fraunces 500 a 600, com `font-variation-settings: "SOFT" 65, "WONK" 1`. Itálico para a palavra em destaque e para a resposta do mito.
+- **Textos:** Karla 400 a 700
 - **Capa sempre com frase curta**, de no máximo 7 palavras
+
+> Design System completo (tokens, componentes, logos, fotos): https://claude.ai/artifact/Ni4rgZQoPh1m5U4Ss6XEr7
 
 ## Estilo gráfico
 - **Clean**, com bastante respiro
 - Elementos **orgânicos e modernos**: manchas arredondadas (*blobs*), arcos e traços finos, nada geométrico rígido
 - Detalhe de assinatura do site: **traço rosa curto antes do sobretítulo** (— MITO OU VERDADE)
-- Fotos reais dela e do consultório, sempre que possível (fotos de paciente só com termo assinado)
+- Fotos reais dela e do consultório, sempre que possível (fotos de paciente só com termo assinado). As duas fotos do site estão em `assets/fotos/`.
+- Banco de imagens (Unsplash/Pexels) só como último recurso, e nunca com cara de banco
 - Nada de ilustração infantilizada, cartoon ou excesso de emoji na arte
 
 ## Formatos

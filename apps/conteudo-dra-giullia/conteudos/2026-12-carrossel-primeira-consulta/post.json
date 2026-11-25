@@ -1,0 +1,17 @@
+{
+  "id": "2026-12-primeira-consulta",
+  "formato": "carrossel",
+  "pilar": "Experiência no consultório",
+  "validar_com_giullia": true,
+  "status": "rascunho para aprovação",
+  "slides": [
+    { "tipo": "capa", "foto": "assets/fotos/site-hero-banner.png", "sobretitulo": "Primeira consulta", "titulo": "Como é a primeira *consulta*?", "subtitulo": "Do oi ao sorriso no espelho" },
+    { "tipo": "texto", "foto": "assets/fotos/site-localizacao-atendimento.png", "sobretitulo": "Antes de tudo", "titulo": "A gente se *conhece*", "texto": "Conversamos sobre os personagens favoritos e apresento cada instrumento, sempre com a ajuda dos nossos amiguinhos." },
+    { "tipo": "lista", "sobretitulo": "Na avaliação", "titulo": "O que eu observo", "itens": ["Dentes, gengiva e mordida", "Freio da língua e do lábio", "Hábitos como chupeta e mamadeira", "Rotina de higiene e alimentação"] },
+    { "tipo": "texto", "sobretitulo": "Quando levar?", "titulo": "Com o primeiro *dentinho*", "texto": "O momento ideal é a partir do nascimento do primeiro dente. Assim começamos a prevenção cedo e construímos um vínculo de confiança." },
+    { "tipo": "texto", "sobretitulo": "E se ele chorar?", "titulo": "Faz parte, e está tudo bem", "texto": "Cada pequeno tem o seu tempo. Quando a criança sabe o que esperar, ela se sente mais segura, e uma experiência positiva vale para a vida toda." },
+    { "tipo": "final", "sobretitulo": "Grandes hábitos", "titulo": "Vamos conhecer o seu *pequeno*?", "texto": "Compartilhe com quem está esperando o primeiro dentinho.", "cta": "Para conversar, o WhatsApp está na bio" }
+  ],
+  "legenda": "A primeira consulta começa muito antes da avaliação! 💗\n\nConversamos sobre os personagens favoritos, \"brincamos\" de escovar os dentes dos dinossauros e apresento cada instrumento, sempre com a ajuda dos nossos amiguinhos.\n\nE aí sim, é hora de olhar com calma cada detalhe: dentes, gengiva, freios, hábitos e a rotina de cuidados em casa.\n\nQuando a criança sabe o que esperar, ela se sente mais segura e confiante! 🦖🦷\n\nDra. Giullia Campioni | CRO-PR 39945",
+  "hashtags": ["#odontopediatriacuritiba", "#primeiraconsulta", "#dentistacuritiba", "#dentedeleite", "#maternidade", "#saudebucalinfantil"]
+}

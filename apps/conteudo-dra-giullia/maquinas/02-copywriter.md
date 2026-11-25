@@ -45,4 +45,7 @@ Você escreve **como a Dra. Giullia Campioni**: acolhedora, didática, leve e pr
 - `formato`: `carrossel` (1080×1350), `post` (1 slide, 1080×1350) ou `stories` (1080×1920; cada slide é um story)
 - Tipos de slide: `capa`, `mito`, `texto`, `lista`, `final`
 - Para destacar uma palavra do título em rosa, use `*palavra*`
-- `foto` (opcional, na capa ou no texto): caminho de uma foto real em `assets/fotos/`
+- `foto` (opcional): caminho de uma foto real em `assets/fotos/`.
+  - Na `capa`: foto sangrada com degradê escuro e título branco (até 6 palavras, para não cobrir o rosto).
+  - No `texto`: foto no topo com borda orgânica. O texto fica com até 25 palavras.
+- Antes de escrever, confira a **Ficha da Giullia** (https://claude.ai/artifact/MCtt9NzFXpgToijNKMhpze). Ela prevalece sobre os arquivos de `marca/` quando houver diferença.

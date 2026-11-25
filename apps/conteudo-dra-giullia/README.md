@@ -7,6 +7,13 @@ Pesquisador de pautas → Copywriter → Revisor CFO → Diretor de arte → apr
    (temas da semana)    (texto + JSON)   (checa ética)    (PNG no template)
 ```
 
+## Páginas
+| Página | Para quê |
+|---|---|
+| [Ficha da Giullia](https://claude.ai/artifact/MCtt9NzFXpgToijNKMhpze) | **Fonte da verdade editável**: fatos e regras (título profissional, formação, atendimentos, limites). Quem tem acesso de edição altera direto; quem não tem copia uma sugestão para o WhatsApp. Antes de gerar conteúdo, a máquina confere a ficha e atualiza `marca/` se algo mudou. |
+| [Design System](https://claude.ai/artifact/Ni4rgZQoPh1m5U4Ss6XEr7) | Cores, fontes, logo, fotos, ícones e os modelos de slide |
+| [Briefing](https://claude.ai/artifact/SUhz5QZDc69kMETwdihcwG) | Formulário respondido pela cliente (nov/2026) |
+
 ## Estrutura
 | Pasta | O que tem |
 |---|---|
@@ -37,7 +44,7 @@ npm run render -- conteudos/2026-12-carrossel-mitos/post.json
 Saída: `conteudos/<pasta>/png/01.png …` (1080×1350, ou 1080×1920 em stories) + `legenda.txt`.
 O script avisa se algum texto não coube no slide ou se as fontes não carregaram.
 
-Tipos de slide disponíveis: `capa` (com ou sem `foto`), `mito` (veredito Mito, Verdade ou Depende), `texto`, `lista`, `final`. Esquema completo em `maquinas/02-copywriter.md`.
+Tipos de slide disponíveis: `capa` (com ou sem `foto`), `mito` (pergunta e resposta: "É mito.", "Verdade." ou "Depende."), `texto` (com ou sem `foto`), `lista`, `final`. Esquema completo em `maquinas/02-copywriter.md`.
 
 ## Fase 2: automação (próximo passo)
 - Pesquisa de pautas agendada toda semana (tarefa agendada no Claude) → pautas caem num quadro do Notion
@@ -45,7 +52,8 @@ Tipos de slide disponíveis: `capa` (com ou sem `foto`), `mito` (veredito Mito, 
 - Futuro: publicação agendada no Instagram via API da Meta
 
 ## Pendências
-- [ ] A Giullia validar o carrossel de exemplo (`conteudos/2026-12-carrossel-mitos`), com atenção às afirmações clínicas
-- [ ] Receber as fotos dela e do consultório → `assets/fotos/`
+- [ ] A Giullia validar os carrosséis de exemplo (`conteudos/2026-12-carrossel-mitos` e `conteudos/2026-12-carrossel-primeira-consulta`), com atenção às afirmações clínicas
+- [ ] Receber mais fotos dela e do consultório → `assets/fotos/` (por enquanto, as 2 do site)
+- [ ] Fotos de banco (Unsplash/Pexels): precisam de uma chave de API ou de baixar manualmente
 - [ ] Analisar os 10 posts de referência que ela enviou (ver `marca/05-identidade-visual.md`)
 - [ ] Templates de stories com enquete e de post único com foto
