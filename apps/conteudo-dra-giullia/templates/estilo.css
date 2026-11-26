@@ -108,3 +108,22 @@ ul.itens li::before{content:"";flex:none;width:22px;height:22px;margin-top:.45em
 .contador{font-size:24px;font-weight:700;letter-spacing:.1em;color:var(--petroleo);font-variant-numeric:tabular-nums}
 .final .contador{color:#fff}
 .arraste{font-size:24px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--petroleo);display:flex;align-items:center;gap:12px}
+
+/* capa com ilustração em traço fino (sem cara de desenho infantil) */
+.capa.com-ilustracao .ilustra{position:absolute;z-index:1;right:40px;top:70px;width:600px;height:600px}
+.capa.com-ilustracao .ilustra svg{width:100%;height:100%}
+.capa.com-ilustracao .conteudo{justify-content:flex-end;padding-bottom:24px}
+.capa.com-ilustracao h1{font-size:108px}
+.capa.com-ilustracao .b1,.capa.com-ilustracao .b3{display:none}
+.il-mancha{fill:var(--ceu)}
+.il-traco{stroke:var(--petroleo);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;fill:var(--papel)}
+.il-traco.fino{fill:none;stroke-width:4}
+.il-brilho{fill:var(--rosa)}
+.il-ponto{fill:var(--mel)}
+
+/* PDF (para importar no Canva): uma página por slide */
+@media print{
+  body{background:none}
+  .slide + .slide{margin-top:0}
+  .slide{break-after:page}
+}

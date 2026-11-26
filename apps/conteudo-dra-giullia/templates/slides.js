@@ -18,6 +18,7 @@ function rodape({ i, total, final, assets, capa, escuro }) {
 
 const corpo = {
   capa: (s, ctx) => `
+    ${s.ilustracao && !s.foto ? `<div class="ilustra">${ctx.ilustracao(s.ilustracao)}</div>` : ""}
     ${s.foto ? `<div class="foto-fundo"><img src="${ctx.foto(s.foto)}" alt=""></div>` : ""}
     <div class="conteudo">${sobre(s.sobretitulo)}<h1>${rich(s.titulo)}</h1>${s.subtitulo ? `<p class="sub">${esc(s.subtitulo)}</p>` : ""}</div>`,
   mito: (s) => {
@@ -31,14 +32,14 @@ const corpo = {
   final: (s) => `<div class="conteudo">${sobre(s.sobretitulo)}<h2>${rich(s.titulo)}</h2>${s.texto ? `<p class="texto">${rich(s.texto)}</p>` : ""}${s.cta ? `<span class="pill">${esc(s.cta)}</span>` : ""}</div>`,
 };
 
-export function montarDocumento(post, { cssHref, assets, foto }) {
+export function montarDocumento(post, { cssHref, assets, foto, ilustracao }) {
   const total = post.slides.length;
   const stories = post.formato === "stories";
   const html = post.slides.map((s, i) => {
     const tipo = corpo[s.tipo] ? s.tipo : "texto";
     const final = tipo === "final";
-    const classes = ["slide", tipo, stories && "stories", i % 2 === 1 && !final && "alt", s.foto && "com-foto"].filter(Boolean).join(" ");
-    return `<section class="${classes}" data-i="${i}">${blobs}${corpo[tipo](s, { foto })}${rodape({ i, total, final, assets, capa: tipo === "capa", escuro: tipo === "capa" && !!s.foto })}</section>`;
+    const classes = ["slide", tipo, stories && "stories", i % 2 === 1 && !final && "alt", s.foto && "com-foto", s.ilustracao && !s.foto && "com-ilustracao"].filter(Boolean).join(" ");
+    return `<section class="${classes}" data-i="${i}">${blobs}${corpo[tipo](s, { foto, ilustracao })}${rodape({ i, total, final, assets, capa: tipo === "capa", escuro: tipo === "capa" && !!s.foto })}</section>`;
   }).join("\n");
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">

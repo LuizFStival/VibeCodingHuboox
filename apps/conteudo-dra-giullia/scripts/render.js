@@ -2,6 +2,7 @@
 // Gera os PNGs de um post a partir do JSON aprovado.
 // Uso: npm run render -- conteudos/<pasta>/post.json
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFileSync, existsSync } from "node:fs";
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
@@ -33,6 +34,11 @@ const html = montarDocumento(post, {
     logoBranco: url(join(raiz, "assets/logo-branco-recortado.png")),
   },
   foto: (p) => url(resolve(raiz, p)),
+  ilustracao: (nome) => {
+    const arq = join(raiz, "templates/ilustracoes", `${String(nome).replace(/[^a-z0-9-]/gi, "")}.svg`);
+    if (!existsSync(arq)) { console.warn(`Aviso: ilustração "${nome}" não existe em templates/ilustracoes/.`); return ""; }
+    return readFileSync(arq, "utf8");
+  },
 });
 const htmlPath = join(saida, "_preview.html");
 await writeFile(htmlPath, html);
@@ -51,12 +57,17 @@ const slides = await page.$$(".slide");
 for (const [i, el] of slides.entries()) {
   await el.screenshot({ path: join(saida, `${String(i + 1).padStart(2, "0")}.png`) });
 }
+// PDF com texto editável, uma página por slide: importe no Canva (Criar design > Importar arquivo)
+const altura = post.formato === "stories" ? 1920 : 1350;
+await page.addStyleTag({ content: `@page{size:1080px ${altura}px;margin:0}` });
+await page.pdf({ path: join(pasta, `${post.id || "post"}-canva.pdf`), width: "1080px", height: `${altura}px`, printBackground: true, preferCSSPageSize: true });
 await browser.close();
 
 if (post.legenda) {
   await writeFile(join(saida, "legenda.txt"), `${post.legenda}\n\n${(post.hashtags || []).join(" ")}\n`);
 }
 console.log(`${slides.length} arte(s) gerada(s) em ${saida}`);
+console.log(`PDF para editar no Canva: ${join(pasta, `${post.id || "post"}-canva.pdf`)}`);
 if (estouros.length) {
   console.warn(`Atenção: texto cortado no(s) slide(s) ${estouros.join(", ")}. Encurte o texto (não diminua a fonte).`);
   process.exitCode = 2;

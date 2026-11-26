@@ -1,0 +1,17 @@
+{
+  "id": "2026-12-escovacao-sem-briga",
+  "formato": "carrossel",
+  "pilar": "Educação e prevenção",
+  "validar_com_giullia": true,
+  "status": "rascunho para aprovação",
+  "slides": [
+    { "tipo": "capa", "ilustracao": "dente-escova", "sobretitulo": "Rotina de cuidado", "titulo": "Escovação sem *briga*", "subtitulo": "4 dicas para a hora de escovar os dentinhos" },
+    { "tipo": "texto", "sobretitulo": "Dica 1", "titulo": "Quem escova é você", "texto": "Até por volta dos 7 ou 8 anos, os pais escovam ou fazem a *revisão* final. O pequeno pode participar, mas o capricho fica com o adulto." },
+    { "tipo": "lista", "sobretitulo": "Dica 2", "titulo": "A quantidade de pasta", "itens": ["Até 3 anos: um grão de arroz", "A partir dos 3 anos: um grão de ervilha", "Sempre pasta com flúor, com a supervisão de um adulto"] },
+    { "tipo": "texto", "foto": "assets/fotos/site-hero-banner.png", "sobretitulo": "Dica 3", "titulo": "Vire *brincadeira*", "texto": "Escove os dentes do dinossauro primeiro, coloque uma música de 2 minutos e deixe o pequeno escolher a escova." },
+    { "tipo": "texto", "sobretitulo": "Dica 4", "titulo": "Uma posição que ajuda", "texto": "Apoie a cabeça do pequeno no seu colo ou fique atrás dele, de frente para o espelho. Assim você enxerga todos os dentinhos." },
+    { "tipo": "final", "sobretitulo": "Grandes hábitos", "titulo": "Cada dia conta um *pouquinho*", "texto": "Salve para lembrar na próxima escovação.", "cta": "Qual dica você vai testar hoje?" }
+  ],
+  "legenda": "A hora de escovar os dentes virou uma batalha aí na sua casa? 💗\n\nVocê não está sozinha! Essa é uma das queixas que eu mais escuto no consultório.\n\nCom paciência, rotina e um pouquinho de brincadeira, a escovação pode virar um momento leve e até gostoso entre vocês.\n\nE lembre: a técnica e a quantidade de pasta são ajustadas para cada idade. Na consulta, eu te mostro na prática ✨\n\nDra. Giullia Campioni | CRO-PR 39945",
+  "hashtags": ["#odontopediatriacuritiba", "#escovacaoinfantil", "#dentistacuritiba", "#saudebucalinfantil", "#maternidade", "#dentedeleite"]
+}
